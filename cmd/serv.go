@@ -34,6 +34,7 @@ import (
 
 const (
 	lfsAuthenticateVerb = "git-lfs-authenticate"
+	gitAnnexShellVerb = "git-annex-shell"
 )
 
 // CmdServ represents the available serv sub-command.
@@ -71,6 +72,7 @@ var (
 		"git-upload-archive": perm.AccessModeRead,
 		"git-receive-pack":   perm.AccessModeWrite,
 		lfsAuthenticateVerb:  perm.AccessModeNone,
+		gitAnnexShellVerb:    perm.AccessModeNone,  // annex write access is allowed by unsetting GIT_ANNEX_SHELL_READONLY, when appropriate
 	}
 	alphaDashDotPattern = regexp.MustCompile(`[^\w-\.]`)
 )
@@ -174,6 +176,21 @@ func runServ(c *cli.Context) error {
 		if len(words) > 2 {
 			lfsVerb = words[2]
 		}
+	} else if verb == gitAnnexShellVerb {
+		//if !setting.Annex.Enabled { // TODO
+		if false {
+			return fail("Unknown git command", "git-annex request over SSH denied, git-annex support is disabled")
+		}
+
+		// git-annex's args always put the repo in always words[2],
+		// unlike most other git subcommands.
+		// Also git-annex sometimes names repos like /~/, as if expecting $HOME to get expanded
+		// e.g.:
+		//   git-annex-shell 'configlist' '/~/user/repo'
+		//   git-annex-shell 'sendkey' '/user/repo 'key'
+		repoPath = words[2]
+		repoPath = strings.TrimPrefix(repoPath, "/")
+		repoPath = strings.TrimPrefix(repoPath, "~/")
 	}
 
 	// LowerCase and trim the repoPath as that's how they are stored.
@@ -221,6 +238,41 @@ func runServ(c *cli.Context) error {
 			requestedMode = perm.AccessModeRead
 		} else {
 			return fail("Unknown LFS verb", "Unknown lfs verb %s", lfsVerb)
+		}
+	} else if verb == gitAnnexShellVerb {
+		gitAnnexVerb := words[1]
+
+		// Compare how gitolite handles this: https://github.com/sitaramc/gitolite/blob/828152dc7f3ad421ff1eb50aeb982be664c95039/src/commands/git-annex-shell#L39-L47
+		// > # Rather than keeping track of which git-annex-shell commands
+		// > # require write access and which are readonly, we tell it
+		// > # when readonly access is needed. [via GIT_ANNEX_SHELL_READONLY]
+		// but gitea has separated permission checking behind the API layer (private.ServCommand)
+		// which must be *told* what permission level the command requires,
+		// instead of giving the subcommand itself a way check permissions.
+		if gitAnnexVerb == "commit" {
+			requestedMode = perm.AccessModeWrite
+		} else if gitAnnexVerb == "configlist" {
+			requestedMode = perm.AccessModeRead
+		} else if gitAnnexVerb == "dropkey" {
+			requestedMode = perm.AccessModeWrite
+		} else if gitAnnexVerb == "gcryptsetup" {
+			requestedMode = perm.AccessModeWrite
+		} else if gitAnnexVerb == "inannex" {
+			requestedMode = perm.AccessModeRead
+		} else if gitAnnexVerb == "lockcontent" {
+			requestedMode = perm.AccessModeWrite
+		} else if gitAnnexVerb == "notifychanges" {
+			requestedMode = perm.AccessModeRead
+		} else if gitAnnexVerb == "p2pstdio" {
+			requestedMode = perm.AccessModeWrite
+		} else if gitAnnexVerb == "recvkey" {
+			requestedMode = perm.AccessModeWrite
+		} else if gitAnnexVerb == "sendkey" {
+			requestedMode = perm.AccessModeRead
+		} else if gitAnnexVerb == "transferinfo" {
+			requestedMode = perm.AccessModeRead
+		} else {
+			return fail("Unknown annex verb", "Unknown annex verb %s", gitAnnexVerb)
 		}
 	}
 
@@ -293,6 +345,23 @@ func runServ(c *cli.Context) error {
 	verbs := strings.Split(verb, " ")
 	if len(verbs) == 2 {
 		gitcmd = exec.CommandContext(ctx, verbs[0], verbs[1], repoPath)
+	} else if verb == gitAnnexShellVerb {
+		words[2] = setting.RepoRootPath + "/" + repoPath // git-annex-shell needs to be given an absolute path
+		gitcmd = exec.CommandContext(ctx, verb, words[1:]...)
+		gitcmd.Env = append(os.Environ(),
+		  // "If set, disallows running git-shell to handle unknown commands."
+		  // - git-annex-shell(1)
+		  "GIT_ANNEX_SHELL_LIMITED=True",
+		  // "If set, git-annex-shell will refuse to run commands
+		  //  that do not operate on the specified directory."
+		  // - git-annex-shell(1)
+		  fmt.Sprintf("GIT_ANNEX_SHELL_DIRECTORY=%s", words[2]),
+		  )
+		if requestedMode < perm.AccessModeWrite {
+		  // "If set, disallows any action that could modify the git-annex repository."
+		  // - git-annex-shell(1)
+		  //gitcmd.Env = append(gitcmd.Env, "GIT_ANNEX_SHELL_READONLY=True")
+		}
 	} else {
 		gitcmd = exec.CommandContext(ctx, verb, repoPath)
 	}
