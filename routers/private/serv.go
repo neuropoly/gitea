@@ -299,6 +299,18 @@ func ServCommand(ctx *context.PrivateContext) {
 		return
 	}
 
+	// look up the permissions this user has to this repo
+	repoPerm, err := models.GetUserRepoPermission(repo, user)
+	if err != nil {
+		log.Error("Unable to get permissions for %-v with key %d in %-v Error: %v", user, key.ID, repo, err)
+		ctx.JSON(http.StatusInternalServerError, private.ErrServCommand{
+			Results: results,
+			Err:     fmt.Sprintf("Unable to get permissions for user %d:%s with key %d in %s/%s Error: %v", user.ID, user.Name, key.ID, results.OwnerName, results.RepoName, err),
+		})
+		return
+	}
+	results.UserMode = repoPerm.UnitAccessMode(unitType)
+
 	// Permissions checking:
 	if repoExist &&
 		(mode > perm.AccessModeRead ||
@@ -317,22 +329,11 @@ func ServCommand(ctx *context.PrivateContext) {
 		} else {
 			// Because of the special ref "refs/for" we will need to delay write permission check
 			if git.SupportProcReceive && unitType == unit.TypeCode {
+				// XXX this makes no sense? https://github.com/go-gitea/gitea/issues/18515
 				mode = perm.AccessModeRead
 			}
 
-			perm, err := models.GetUserRepoPermission(repo, user)
-			if err != nil {
-				log.Error("Unable to get permissions for %-v with key %d in %-v Error: %v", user, key.ID, repo, err)
-				ctx.JSON(http.StatusInternalServerError, private.ErrServCommand{
-					Results: results,
-					Err:     fmt.Sprintf("Unable to get permissions for user %d:%s with key %d in %s/%s Error: %v", user.ID, user.Name, key.ID, results.OwnerName, results.RepoName, err),
-				})
-				return
-			}
-
-			userMode := perm.UnitAccessMode(unitType)
-
-			if userMode < mode {
+			if results.UserMode < mode {
 				log.Warn("Failed authentication attempt for %s with key %s (not authorized to %s %s/%s) from %s", user.Name, key.Name, modeString, ownerName, repoName, ctx.RemoteAddr())
 				ctx.JSON(http.StatusUnauthorized, private.ErrServCommand{
 					Results: results,
@@ -409,13 +410,14 @@ func ServCommand(ctx *context.PrivateContext) {
 			return
 		}
 	}
-	log.Debug("Serv Results:\nIsWiki: %t\nDeployKeyID: %d\nKeyID: %d\tKeyName: %s\nUserName: %s\nUserID: %d\nOwnerName: %s\nRepoName: %s\nRepoID: %d",
+	log.Debug("Serv Results:\nIsWiki: %t\nDeployKeyID: %d\nKeyID: %d\tKeyName: %s\nUserName: %s\nUserID: %d\nUserMode: %d\nOwnerName: %s\nRepoName: %s\nRepoID: %d",
 		results.IsWiki,
 		results.DeployKeyID,
 		results.KeyID,
 		results.KeyName,
 		results.UserName,
 		results.UserID,
+		results.UserMode,
 		results.OwnerName,
 		results.RepoName,
 		results.RepoID)

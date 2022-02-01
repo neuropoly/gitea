@@ -239,41 +239,6 @@ func runServ(c *cli.Context) error {
 		} else {
 			return fail("Unknown LFS verb", "Unknown lfs verb %s", lfsVerb)
 		}
-	} else if verb == gitAnnexShellVerb {
-		gitAnnexVerb := words[1]
-
-		// Compare how gitolite handles this: https://github.com/sitaramc/gitolite/blob/828152dc7f3ad421ff1eb50aeb982be664c95039/src/commands/git-annex-shell#L39-L47
-		// > # Rather than keeping track of which git-annex-shell commands
-		// > # require write access and which are readonly, we tell it
-		// > # when readonly access is needed. [via GIT_ANNEX_SHELL_READONLY]
-		// but gitea has separated permission checking behind the API layer (private.ServCommand)
-		// which must be *told* what permission level the command requires,
-		// instead of giving the subcommand itself a way check permissions.
-		if gitAnnexVerb == "commit" {
-			requestedMode = perm.AccessModeWrite
-		} else if gitAnnexVerb == "configlist" {
-			requestedMode = perm.AccessModeRead
-		} else if gitAnnexVerb == "dropkey" {
-			requestedMode = perm.AccessModeWrite
-		} else if gitAnnexVerb == "gcryptsetup" {
-			requestedMode = perm.AccessModeWrite
-		} else if gitAnnexVerb == "inannex" {
-			requestedMode = perm.AccessModeRead
-		} else if gitAnnexVerb == "lockcontent" {
-			requestedMode = perm.AccessModeWrite
-		} else if gitAnnexVerb == "notifychanges" {
-			requestedMode = perm.AccessModeRead
-		} else if gitAnnexVerb == "p2pstdio" {
-			requestedMode = perm.AccessModeWrite
-		} else if gitAnnexVerb == "recvkey" {
-			requestedMode = perm.AccessModeWrite
-		} else if gitAnnexVerb == "sendkey" {
-			requestedMode = perm.AccessModeRead
-		} else if gitAnnexVerb == "transferinfo" {
-			requestedMode = perm.AccessModeRead
-		} else {
-			return fail("Unknown annex verb", "Unknown annex verb %s", gitAnnexVerb)
-		}
 	}
 
 	results, err := private.ServCommand(ctx, keyID, username, reponame, requestedMode, verb, lfsVerb)
@@ -357,10 +322,11 @@ func runServ(c *cli.Context) error {
 		  // - git-annex-shell(1)
 		  fmt.Sprintf("GIT_ANNEX_SHELL_DIRECTORY=%s", words[2]),
 		  )
-		if requestedMode < perm.AccessModeWrite {
+		if results.UserMode < perm.AccessModeWrite {
 		  // "If set, disallows any action that could modify the git-annex repository."
 		  // - git-annex-shell(1)
-		  //gitcmd.Env = append(gitcmd.Env, "GIT_ANNEX_SHELL_READONLY=True")
+		  // We set this when the backend API has told us that we don't have write permission to this repo.
+		  gitcmd.Env = append(gitcmd.Env, "GIT_ANNEX_SHELL_READONLY=True")
 		}
 	} else {
 		gitcmd = exec.CommandContext(ctx, verb, repoPath)
