@@ -1,0 +1,32 @@
+name: 'Sync Upstream'
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 09:00 every day
+    - cron:  '0 9 */1 * *'
+
+jobs:
+  sync_upstream:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Sync upstream changes
+      uses: aormsby/Fork-Sync-With-Upstream-action@v3.2
+      with:
+        upstream_sync_branch: main
+        upstream_sync_repo: go-gitea/gitea
+        target_sync_branch: main
+        target_repo_token: ${{ secrets.GITHUB_TOKEN }}
+
+        # `schedule:` only runs if this workflow is part of 'main'
+        # but ideally 'main' is an exact mirror of upstream's 'main'
+        # so that https://github.com/kousu/gitea/pull/1 is tidy.
+        # To split the difference:
+        #   keep our this workflow and any other tweaks we make on
+        #   top, by rebasing.
+        upstream_pull_args: '--rebase --tags'
+        target_push_args: '--force'
+
+        # DEBUG
+        #test_mode: true
