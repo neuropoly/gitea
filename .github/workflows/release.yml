@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+    # XXX this trigger is broken: it doesn't tag until the end of the workflow but needs to use the tag in the middle
+      version:
+        description: 'Version (e.g. 2.0.3)'
+        required: true
+  push:
+    tags:
+      - "v*.*.*"
+  release:
+    types:
+      - created
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y make git xz-utils
+      # per README.md, building needs Go 1.17 and Node LTS
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '^1.17' # The Go version to download (if necessary) and use.
+      - uses: actions/setup-node@v2
+        with:
+          node-version: 'lts/*'
+
+      - name: debug - github object
+        run: |
+          echo '${{ toJSON(github) }}'
+          echo ${{github.event.inputs.version}}
+          echo ${{github.ref}}
+          echo ${{github.event.inputs.version || github.ref}}
+          echo ${${{github.event.inputs.version || github.ref}}#refs/tags/}-linux-amd64
+          echo $(git describe --tags --always)
+
+      - name: debug
+        run: |
+          pwd
+          set
+          ls -la
+
+      - name: Build Release Assets
+        # The officially releases use 'make release' (https://github.com/neuropoly/gitea/blob/65e42f83e916af771a51af6a3f8db483ffa05c05/.drone.yml#L772)
+        # but that does cross-compilation (via docker (via https://github.com/techknowlogick/xgo))
+        # which is overhead and complication I don't need or want to deal with.
+        #
+        # Instead, just do native Linux compilation then pretend we did 'make release'.
+        run: |
+          TAGS="bindata sqlite sqlite_unlock_notify" make build
+          mkdir -p dist/release
+          cp -p gitea dist/release/gitea-$(git describe --tags --always)-linux-amd64
+
+      - name: Compress Release Assets
+        run: |
+          xz -k dist/release/*
+
+      - name: Checksum Release Assets
+        # each release asset in the official build process gets a separate .sha256 file
+        # which means we need a loop to emulate it
+        run: |
+          (cd dist/release; for asset in *; do sha256sum $asset > $asset.sha256; done)
+
+      - name: Upload Release
+        # this Action creates the release if not yet created
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: 'dist/release/*'
+          fail_on_unmatched_files: true
+          tag_name: ${{ github.event.inputs.version }} # in the workflow_dispatch case, make a new tag from the given input;
+                                                       # in the published release case, this will be empty and the action automatically
+                                                       # falls back to github.ref, which will be the tag that triggered it
