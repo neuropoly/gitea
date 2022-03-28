@@ -31,23 +31,35 @@ jobs:
       run: |
         PARENT=$(curl -s https://api.github.com/repos/${{github.repository}} | jq -r '.parent.clone_url')
         git remote add upstream $PARENT
+        
+    - name: debug - github object
+      run: |
+        echo '${{ toJSON(github) }}'
+        
+    - name: debug - events object
+      run: |
+        echo '${{ toJSON(github.event) }}'
+        
+    - name: debug - repo object
+      run: |
+        echo '${{ toJSON(github.event.repository) }}'
 
     - name: Sync default branch
       run: |
         git checkout ${{ github.event.repository.master_branch }} && \
-        git pull --shallow-since='1 month' --rebase --tags upstream main
+        git pull --shallow-since='6 months' --rebase --tags upstream main
 
     - name: Sync main
       # This *should* be the same as git branch -f main upstream/main
       # since we're not making any commits of our own to main
       run: |
         git checkout main && \
-        git pull --shallow-since='1 month' --rebase --tags upstream main
+        git pull --shallow-since='6 months' --rebase --tags upstream main
 
     - name: Rebase git-annex, the feature branch
       run: |
         git checkout git-annex && \
-        git pull --shallow-since='1 month' --rebase --tags upstream main
+        git pull --shallow-since='6 months' --rebase --tags upstream main
 
     - name: Construct latest version with git-annex on top
       run: |
