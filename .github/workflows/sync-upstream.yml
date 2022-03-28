@@ -1,3 +1,19 @@
+# This soft-fork of Gitea adds git-annex support (https://git-annex.branchable.com/)
+# git-annex is like git-lfs, which Gitea already supports, but more complicated,
+# except that it doesn't need an extra port open.
+#
+# We maintain three branches and N tags:
+# - main           - a mirror of upstream's main
+# - git-annex      - our patch (see it at: https://github.com/neuropoly/gitea/pulls/1)
+# - release-action - release scripts + our front page
+# - $X-git-annex for each upstream tag $X (each created after we started tracking upstream, that is)
+#
+# release-action, this branch, contains:
+#  - sync-upstream.yml (this)  - try to update the branches/tags
+#  - release.yml               - build and push to https://github.com/neuropoly/gitea/releases/
+# and it is our default branch because Gitub Actions
+# cronjobs are only allowed to run on the default branch
+
 name: 'Sync Upstream'
 
 on:
@@ -10,23 +26,45 @@ jobs:
   sync_upstream:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: Sync upstream changes
-      uses: aormsby/Fork-Sync-With-Upstream-action@v3.2
-      with:
-        upstream_sync_branch: main
-        upstream_sync_repo: go-gitea/gitea
-        target_sync_branch: main
-        target_repo_token: ${{ secrets.GITHUB_TOKEN }}
+    - uses: actions/checkout@v3
+    - name: Add upstream
+      run: |
+        PARENT=$(curl -s https://api.github.com/repos/${{github.repository}} | jq -r '.parent.clone_url')
+        git remote add upstream $PARENT
 
-        # `schedule:` only runs if this workflow is part of 'main'
-        # but ideally 'main' is an exact mirror of upstream's 'main'
-        # so that https://github.com/kousu/gitea/pull/1 is tidy.
-        # To split the difference:
-        #   keep our this workflow and any other tweaks we make on
-        #   top, by rebasing.
-        upstream_pull_args: '--rebase --tags'
-        target_push_args: '--force'
+    - name: Sync default branch
+      run: |
+        git checkout ${{ github.event.repository.master_branch }} && \
+        git pull --shallow-since='1 month' --rebase --tags upstream main
 
-        # DEBUG
-        #test_mode: true
+    - name: Sync main
+      # This *should* be the same as git branch -f main upstream/main
+      # since we're not making any commits of our own to main
+      run: |
+        git checkout main && \
+        git pull --shallow-since='1 month' --rebase --tags upstream main
+
+    - name: Rebase git-annex, the feature branch
+      run: |
+        git checkout git-annex && \
+        git pull --shallow-since='1 month' --rebase --tags upstream main
+
+    - name: Construct latest version with git-annex on top
+      run: |
+        # for the latest tag vX.Y.Z, construct tag vX.Y.Z-git-annex.
+        # Only construct the *latest* release to reduce the risk of conflicts
+        # (we have to ask 'git tag' instead of the more elegant method of syncing tags
+        #  and using Github Actions' `on: push: tags: ...` because those upstream tags
+        #  *don't contain this workflow*, so there would be no way to trigger this)
+        #
+        # This will trigger release.yml to build and publish the latest version, too
+        set -e
+        RELEASE=$(git tag -l --sort=-v:refname | egrep -v 'git-annex$' | head -n 1)
+        git checkout $RELEASE
+        git cherry-pick main..${{ github.event.repository.master_branch }}  # Make sure release.yml is in the tag, so it triggers a build
+        git cherry-pick main..git-annex
+        git tag $RELEASE-git-annex
+
+    - name: Upload everything back to Github
+      run: |
+        git push -f --all
