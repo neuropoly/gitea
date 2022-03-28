@@ -7,12 +7,13 @@
 # - git-annex      - our patch (see it at: https://github.com/neuropoly/gitea/pulls/1)
 # - release-action - release scripts + our front page
 # - $X-git-annex for each upstream tag $X (each created after we started tracking upstream, that is)
+#     which = $X + release-action + git-annex
 #
-# release-action, this branch, contains:
+# This branch, release-action, contains:
 #  - sync-upstream.yml (this)  - try to update the branches/tags
 #  - release.yml               - build and push to https://github.com/neuropoly/gitea/releases/
-# and it is our default branch because Gitub Actions
-# cronjobs are only allowed to run on the default branch
+# and it is our default branch because cronjobs are
+# only allowed to run on the default branch
 
 name: 'Sync Upstream'
 
@@ -24,42 +25,110 @@ on:
 
 jobs:
   sync_upstream:
+    name: 'Sync Upstream'
     runs-on: ubuntu-latest
     steps:
+    - name: debug - events object
+      run: |
+        echo '${{ tojson(github.event) }}'
+
+    - name: Git Identity
+      run: |
+        git config --global user.name "Actions Bot"
+        # or 41898282+github-actions[bot]@users.noreply.github.com ?
+        git config --global user.email action@github.com
+
+        # disambiguates 'git checkout' so it always uses this repo
+        git config --global checkout.defaultRemote origin
+
     - uses: actions/checkout@v3
+
     - name: Add upstream
       run: |
         PARENT=$(curl -s https://api.github.com/repos/${{github.repository}} | jq -r '.parent.clone_url')
+        set -x
         git remote add upstream $PARENT
-        
-    - name: debug - github object
-      run: |
-        echo '${{ toJSON(github) }}'
-        
-    - name: debug - events object
-      run: |
-        echo '${{ toJSON(github.event) }}'
-        
-    - name: debug - repo object
-      run: |
-        echo '${{ toJSON(github.event.repository) }}'
 
-    - name: Sync default branch
+    - name: 'Debug: branches'
       run: |
-        git checkout ${{ github.event.repository.master_branch }} && \
-        git pull --shallow-since='6 months' --rebase --tags upstream main
+        set -e
+        git branch -a
+
+    - name: 'Debug: branches'
+      run: |
+        set -e
+        git branch -a
+
+    - name: 'Debug: tags'
+      run: |
+        set -e
+        git tag -l
 
     - name: Sync main
       # This *should* be the same as git branch -f main upstream/main
       # since we're not making any commits of our own to main
       run: |
-        git checkout main && \
-        git pull --shallow-since='6 months' --rebase --tags upstream main
+        set -e
+        set -x
+        du -hs .git
+          # Because actions/checkout does a lazy, shallow checkout
+          # we need to redo it to make sure we have enough common history
+          # from both branches so git can figure out how they relate.
+          #
+          # We *could* do a full checkout by setting depth: 0 above,
+          # but this is faster, especially on a large repo like this one.
+          # XXX except: --tags causes a complete download; is there any way to 
+        git fetch --shallow-since="6 months" origin main
+        du -hs .git
+        git checkout main
+        du -hs .git
+        git pull --shallow-since="6 months" --rebase upstream main
+        # or..maybe git rebase upstream/main ? which wouldn't require an extra network call?
+        du -hs .git
+        # git push -f # ?
+
+    - name: 'Debug: branches'
+      run: |
+        set -e
+        git branch -a
+
+    - name: Sync ${{ github.event.repository.default_branch }}
+      run: |
+        set -e
+        git fetch --shallow-since="6 months" origin "${{ github.event.repository.default_branch }}"
+        git checkout "${{ github.event.repository.default_branch }}"
+        git rebase main
+        # git push -f # ?
+
+    - name: 'Debug: branches'
+      run: |
+        set -e
+        git branch -a
+
+    - name: 'Debug: tags'
+      run: |
+        set -e
+        git tag -l
 
     - name: Rebase git-annex, the feature branch
+      # This is the meatiest part of this script: rebase git-annex on top of upstream.
+      # Occasionally this step will fail -- when there's a merge conflict with upstream.
+      # In that case, you will get an email about it, and you should run these steps
+      # manually, and fix the merge conflicts that way.
       run: |
-        git checkout git-annex && \
-        git pull --shallow-since='6 months' --rebase --tags upstream main
+        set -e
+        set -x
+        du -hs .git
+        time git fetch --shallow-since="6 months" origin git-annex
+        du -hs .git
+        git checkout git-annex
+        git rebase main
+        # git push -f # ?
+
+    - name: 'Debug: branches'
+      run: |
+        set -e
+        git branch -a
 
     - name: Construct latest version with git-annex on top
       run: |
@@ -71,9 +140,17 @@ jobs:
         #
         # This will trigger release.yml to build and publish the latest version, too
         set -e
-        RELEASE=$(git tag -l --sort=-v:refname | egrep -v 'git-annex$' | head -n 1)
+        #RELEASE="$(git tag -l --sort=-v:refname | egrep -v 'git-annex$' | head -n 1)"
+        # there doesn't seem to be a way to get a list of tags via git without
+        # downloading them all (i.e. fetch --tags effectively does fetch --unshallow)
+        # but the GitHub API provides a shortcut:
+        RELEASE=$(curl -s ${{github.event.repository.tags_url}} | jq -r '.[0].name')
+        du -hs .git
+        # https://stackoverflow.com/questions/26617862/git-shallow-fetch-of-a-new-tag
+        git fetch --depth 1 upstream tag "$RELEASE"
+        du -hs .git
         git checkout $RELEASE
-        git cherry-pick main..${{ github.event.repository.master_branch }}  # Make sure release.yml is in the tag, so it triggers a build
+        git cherry-pick main.."${{ github.event.repository.default_branch }}"  # Make sure release.yml is in the tag, so it triggers a build
         git cherry-pick main..git-annex
         git tag $RELEASE-git-annex
 
