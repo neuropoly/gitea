@@ -611,3 +611,30 @@ func GetIdxFile(ctx *context.Context) {
 		h.sendFile("application/x-git-packed-objects-toc", "objects/pack/pack-"+ctx.Params("file")+".idx")
 	}
 }
+
+// GetAnnexObject implements git-annex dumb HTTP
+func GetAnnexObject(ctx *context.Context) {
+	//if !setting.Annex.Enabled { // TODO
+	if false {
+		ctx.PlainText(http.StatusNotFound, "Not found")
+		return
+	}
+	h := httpBase(ctx)
+	if h != nil {
+		// git-annex objects are stored in .git/annex/objects/{hash1}/{hash2}/{key}/{key}
+		// where key is a string containing the size and (usually SHA256) checksum of the file,
+		// and hash1+hash2 are the first few bits of the md5sum of key itself.
+		// ({hash1}/{hash2}/ is just there to avoid putting too many files in one directory)
+		// ref: https://git-annex.branchable.com/internals/hashing/
+
+		// keyDir should = key, but we don't enforce that
+		object := ctx.Params("hash1") + "/" + ctx.Params("hash2") + "/" + ctx.Params("keyDir") + "/" + ctx.Params("key")
+
+		// use path.Clean() to sanitize the input but otherwise trust it
+		// the router code disallows, so this should be redundant, but it's harmless extra safety even if it is.
+		object = path.Clean("/" + object)[1:] // path.Clean() removes all directory traversals *if* given an absolute path to begin with, so make object an absolute path and then a relative path again
+
+		h.setHeaderCacheForever()
+		h.sendFile("application/octet-stream", "annex/objects/"+object)
+	}
+}
