@@ -633,6 +633,11 @@ func GetIdxFile(ctx *context.Context) {
 
 // GetAnnexObject implements git-annex dumb HTTP
 func GetAnnexObject(ctx *context.Context) {
+	//if !setting.Annex.Enabled { // TODO
+	if false {
+		ctx.PlainText(http.StatusNotFound, "Not found")
+		return
+	}
 	h := httpBase(ctx)
 	if h != nil {
 		// git-annex objects are stored in .git/annex/objects/{hash1}/{hash2}/{key}/{key}
