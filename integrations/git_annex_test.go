@@ -111,6 +111,15 @@ func TestGitAnnex(t *testing.T) {
 				//fmt.Printf("Sleeping now. good luck.\n") // give time to allow manually inspecting the test server; the password for all users is 'password'!
 				//time.Sleep(2 * time.Second) // DEBUG
 
+				// Delete the repo, make sure it's fully gone
+				doAPIDeleteRepository(API)(t)
+
+				_, stat_err = os.Stat(annexObjectPath)
+				require.True(t, os.IsNotExist(stat_err), "Annexed file should not exist in remote .git/annex/objects folder")
+
+				_, stat_err = os.Stat(path.Join(setting.RepoRootPath, API.Username, API.Reponame+".git"))
+				require.True(t, os.IsNotExist(stat_err), "Remote annex repo should be removed from disk")
+
 			})
 
 		})
