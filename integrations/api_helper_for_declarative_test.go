@@ -462,3 +462,23 @@ func doAPIAddRepoToOrganizationTeam(ctx APITestContext, teamID int64, orgName, r
 		ctx.Session.MakeRequest(t, req, http.StatusNoContent)
 	}
 }
+
+// generate and activate an ssh key for the user attached to the APITestContext
+// TODO: pick a better name; golang doesn't do method overriding.
+func withCtxKeyFile(t *testing.T, ctx APITestContext, callback func()) {
+	keyName := "One of " + ctx.Username + "'s keys"
+	withKeyFile(t, keyName, func(keyFile string) {
+
+		var key api.PublicKey
+
+		doAPICreateUserKey(ctx, keyName, keyFile,
+			func(t *testing.T, _key api.PublicKey) {
+				// save the key ID so we can delete it at the end
+				key = _key
+			})(t)
+
+		defer doAPIDeleteUserKey(ctx, key.ID)(t)
+
+		callback()
+	})
+}
