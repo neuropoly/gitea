@@ -223,6 +223,24 @@ func doCleanAnnexLockdown() {
 }
 
 func AnnexObjectPath(repoPath string, file string) (string, error) {
+
+	// find the path inside *.git/annex/objects of a given file
+	// i.e. figure out its two-level hash prefix: https://git-annex.branchable.com/internals/hashing/
+	// ASSUMES the target file is checked into HEAD
+
+	var bare bool // whether the repo is bare or not; this changes what the hashing algorithm is, due to backwards compatibility
+
+	bareStr, _, err := git.NewCommand(git.DefaultContext, "config", "core.bare").RunStdString(&git.RunOpts{Dir: repoPath})
+	if err != nil { return "", err }
+
+	if bareStr == "true\n" {
+		bare = true
+	} else if bareStr == "false\n" {
+		bare = false
+	} else {
+		return "", errors.New(fmt.Sprintf("Could not determine if %s is a bare repo or not; git config core.bare = <%s>", repoPath, bareStr))
+	}
+
 	// given a repo and a file in it
 	// TODO: handle other branches, e.g. non-HEAD branches etc
 	annexKey, _, err := git.NewCommand(git.DefaultContext, "show", "HEAD:"+file).RunStdString(&git.RunOpts{Dir: repoPath})
@@ -236,15 +254,18 @@ func AnnexObjectPath(repoPath string, file string) (string, error) {
 	}
 	annexKey = strings.TrimPrefix(annexKey, "/annex/objects/")
 
-	// we need to know the two-level folder prefix: https://git-annex.branchable.com/internals/hashing/
-	keyHashPrefix, _, err := git.NewCommand(git.DefaultContext, "annex", "examinekey", "--format=${hashdirlower}", annexKey).RunStdString(&git.RunOpts{Dir: repoPath})
-	if err != nil {
-		return "", err
+	var keyformat string
+	if bare {
+		keyformat = "hashdirlower"
+	} else {
+		keyformat = "hashdirmixed"
 	}
+	keyHashPrefix, _, err := git.NewCommand(git.DefaultContext, "annex", "examinekey", "--format=${"+keyformat+"}", annexKey).RunStdString(&git.RunOpts{Dir: repoPath})
+	if err != nil { return "", err }
 
-	// TODO: handle non-bare repos
-	// if ! bare { repoPath += "/.git", and use hashdirmixed instead of hashdirlower }
-
+	if !bare {
+		repoPath = path.Join(repoPath, ".git")
+	}
 	return path.Join(repoPath, "annex", "objects", keyHashPrefix, annexKey, annexKey), nil
 }
 
