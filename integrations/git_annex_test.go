@@ -19,8 +19,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"testing"
 
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"math/rand"
 	"net/url"
@@ -161,8 +163,54 @@ func TestGitAnnex(t *testing.T) {
 	})
 }
 
+// https://stackoverflow.com/a/30038571
+func filecmp(file1, file2 string, chunkSize int) (bool, error) {
+	// Check file size ...
+	if chunkSize == 0 {
+		chunkSize = 2 << 12
+	}
+
+	f1, err := os.Open(file1)
+	if err != nil {
+		return false, err
+	}
+	defer f1.Close()
+
+	f2, err := os.Open(file2)
+	if err != nil {
+		return false, err
+	}
+	defer f2.Close()
+
+	for {
+		b1 := make([]byte, chunkSize)
+		_, err1 := f1.Read(b1)
+		if err1 != nil && err1 != io.EOF {
+			return false, err1
+		}
+
+		b2 := make([]byte, chunkSize)
+		_, err2 := f2.Read(b2)
+		if err2 != nil && err2 != io.EOF {
+			return false, err2
+		}
+
+		if err1 == io.EOF && err2 == io.EOF {
+			return true, nil
+		} else if err1 != nil || err2 != nil {
+			return false, nil
+		}
+
+		if !bytes.Equal(b1, b2) {
+			return false, nil
+		}
+	}
+}
+
 func doGenerateRandomFile(size int, path string) (err error) {
 	// Generate random file
+
+	// XXX TODO: maybe this should not be random, but instead a predictable pattern, so that the test is deterministic
 	bufSize := 4 * 1024
 	if bufSize > size {
 		bufSize = size
@@ -231,7 +279,9 @@ func AnnexObjectPath(repoPath string, file string) (string, error) {
 	var bare bool // whether the repo is bare or not; this changes what the hashing algorithm is, due to backwards compatibility
 
 	bareStr, _, err := git.NewCommand(git.DefaultContext, "config", "core.bare").RunStdString(&git.RunOpts{Dir: repoPath})
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 
 	if bareStr == "true\n" {
 		bare = true
@@ -261,7 +311,9 @@ func AnnexObjectPath(repoPath string, file string) (string, error) {
 		keyformat = "hashdirmixed"
 	}
 	keyHashPrefix, _, err := git.NewCommand(git.DefaultContext, "annex", "examinekey", "--format=${"+keyformat+"}", annexKey).RunStdString(&git.RunOpts{Dir: repoPath})
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 
 	if !bare {
 		repoPath = path.Join(repoPath, ".git")
