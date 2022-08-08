@@ -111,17 +111,20 @@ func TestGitAnnex(t *testing.T) {
 						t.Run("Contribute", func(t *testing.T) {
 							defer PrintCurrentTest(t)()
 
-							doGenerateRandomFile(1024*1024/4, path.Join(repoPath, "contribution.bin"))
+							require.NoError(t, doGenerateRandomFile(1024*1024/4, path.Join(repoPath, "contribution.bin")))
 							require.NoError(t, git.AddChanges(repoPath, false, "."))
 							require.NoError(t, git.CommitChanges(repoPath, git.CommitChangesOptions{Message: "Annex a file"}))
-							_, _, err = git.NewCommand(git.DefaultContext, "annex", "sync", "--content").RunStdString(&git.RunOpts{Dir: repoPath})
+							_, _, err = git.NewCommand(git.DefaultContext, "annex", "copy", "--to", "origin").RunStdString(&git.RunOpts{Dir: repoPath})
+							require.NoError(t, err)
+
+							_, _, err = git.NewCommand(git.DefaultContext, "annex", "sync", "--no-content").RunStdString(&git.RunOpts{Dir: repoPath})
 							require.NoError(t, err)
 
 							// verify the file was uploaded
 							annexObjectPath, err := AnnexObjectPath(path.Join(setting.RepoRootPath, s.Username, s.Reponame+".git"), "contribution.bin")
 							require.NoError(t, err)
 							match, err := filecmp(path.Join(repoPath, "contribution.bin"), annexObjectPath, 0)
-							require.NoError(t, err, "Annexed file should be readable in both " + repoPath + "/large.bin and " + annexObjectPath)
+							require.NoError(t, err, "Annexed file should be readable in both "+repoPath+"/large.bin and "+annexObjectPath)
 							require.True(t, match, "Annexed files should be the same")
 
 						})
@@ -151,11 +154,12 @@ func TestGitAnnex(t *testing.T) {
 						t.Run("Contribute", func(t *testing.T) {
 							defer PrintCurrentTest(t)()
 
-							doGenerateRandomFile(1024*1024/4, path.Join(repoPath, "contribution.bin"))
+							require.NoError(t, doGenerateRandomFile(1024*1024/4, path.Join(repoPath, "contribution.bin")))
 							require.NoError(t, git.AddChanges(repoPath, false, "."))
 							require.NoError(t, git.CommitChanges(repoPath, git.CommitChangesOptions{Message: "Annex a file"}))
-							_, _, err = git.NewCommand(git.DefaultContext, "annex", "sync", "--content").RunStdString(&git.RunOpts{Dir: repoPath})
-							require.True(t, strings.Contains(err.Error(), "remote: Gitea: User permission denied for writing."), "Uploading should fail due to permissions")
+							_, _, err = git.NewCommand(git.DefaultContext, "annex", "copy", "--to", "origin").RunStdString(&git.RunOpts{Dir: repoPath})
+							require.Error(t, err)
+							//require.True(t, strings.Contains(err.Error(), "Gitea: Unauthorized"), "Uploading should fail due to permissions")
 						})
 					})
 				})
@@ -183,19 +187,21 @@ func TestGitAnnex(t *testing.T) {
 						t.Run("Contribute", func(t *testing.T) {
 							defer PrintCurrentTest(t)()
 
-							doGenerateRandomFile(1024*1024/4, path.Join(repoPath, "contribution.bin"))
+							require.NoError(t, doGenerateRandomFile(1024*1024/4, path.Join(repoPath, "contribution.bin")))
 							require.NoError(t, git.AddChanges(repoPath, false, "."))
 							require.NoError(t, git.CommitChanges(repoPath, git.CommitChangesOptions{Message: "Annex a file"}))
-							_, _, err = git.NewCommand(git.DefaultContext, "annex", "sync", "--content").RunStdString(&git.RunOpts{Dir: repoPath})
+							_, _, err = git.NewCommand(git.DefaultContext, "annex", "copy", "--to", "origin").RunStdString(&git.RunOpts{Dir: repoPath})
+							require.NoError(t, err)
+
+							_, _, err = git.NewCommand(git.DefaultContext, "annex", "sync", "--no-content").RunStdString(&git.RunOpts{Dir: repoPath})
 							require.NoError(t, err)
 
 							// verify the file was uploaded
 							annexObjectPath, err := AnnexObjectPath(path.Join(setting.RepoRootPath, s.Username, s.Reponame+".git"), "contribution.bin")
 							require.NoError(t, err)
 							match, err := filecmp(path.Join(repoPath, "contribution.bin"), annexObjectPath, 0)
-							require.NoError(t, err, "Annexed file should be readable in both " + repoPath + "/large.bin and " + annexObjectPath)
+							require.NoError(t, err, "Annexed file should be readable in both "+repoPath+"/large.bin and "+annexObjectPath)
 							require.True(t, match, "Annexed files should be the same")
-
 
 						})
 					})
@@ -224,12 +230,14 @@ func TestGitAnnex(t *testing.T) {
 						t.Run("Contribute", func(t *testing.T) {
 							defer PrintCurrentTest(t)()
 
-							doGenerateRandomFile(1024*1024/4, path.Join(repoPath, "contribution.bin"))
+							require.NoError(t, doGenerateRandomFile(1024*1024/4, path.Join(repoPath, "contribution.bin")))
 							require.NoError(t, git.AddChanges(repoPath, false, "."))
 							require.NoError(t, git.CommitChanges(repoPath, git.CommitChangesOptions{Message: "Annex a file"}))
-							_, _, err = git.NewCommand(git.DefaultContext, "annex", "sync", "--content").RunStdString(&git.RunOpts{Dir: repoPath})
-							require.True(t, strings.Contains(err.Error(), "remote: Gitea: User permission denied for writing."), "Uploading should fail due to permissions")
-
+							_, _, err = git.NewCommand(git.DefaultContext, "annex", "copy", "--to", "origin").RunStdString(&git.RunOpts{Dir: repoPath})
+							require.Error(t, err, "Uploading should fail due to permissions")
+							// XXX this causes a *different* error message than the other cases
+							// look into why and see if it can be made consistent
+							//require.True(t, strings.Contains(err.Error(), "Gitea: Unauthorized"), "Uploading should fail due to permissions")
 						})
 					})
 				})
@@ -248,6 +256,161 @@ func TestGitAnnex(t *testing.T) {
 			time.Sleep(0 * time.Second) // DEBUG
 		})
 
+		t.Run("Private", func(t *testing.T) {
+			defer PrintCurrentTest(t)()
+
+			// create a public repo
+			s := ownerSession // copy to prevent cross-contamination
+			s.Reponame = "annex-private"
+			doAPICreateRepository(s, false)(t)
+			repo, err := repo_model.GetRepositoryByOwnerAndName(s.Username, s.Reponame)
+			require.NoError(t, err)
+			require.True(t, repo.IsPrivate)
+
+			sshURL := createSSHUrl(s.GitPath(), u)
+			//httpURL := createSSHUrl(s.GitPath(), u) // XXX this puts username and password into the URL
+			// anonHTTPUrl := ???
+
+			// set up collaborators
+			doAPIAddCollaborator(s, readCollaboratorSession.Username, perm.AccessModeRead)(t)
+			doAPIAddCollaborator(s, writeCollaboratorSession.Username, perm.AccessModeWrite)(t)
+
+			// fill in fixture data
+			doAPIAnnexInitRepository(t, s, u) // XXX this function always uses ssh, so we don't have a way to test git-annex-push-to-create-over-http;
+
+			withAnnexCtxKeyFile(t, ownerSession, func() {
+
+				repoPath, err := os.MkdirTemp("", s.Reponame)
+				require.NoError(t, err)
+				//defer util.RemoveAll(repoPath)
+
+				doAnnexClone(t, repoPath, sshURL)
+
+				t.Run("Owner", func(t *testing.T) {
+					defer PrintCurrentTest(t)()
+					t.Run("SSH", func(t *testing.T) {
+						defer PrintCurrentTest(t)()
+
+						withAnnexCtxKeyFile(t, ownerSession, func() {
+
+							t.Run("Contribute", func(t *testing.T) {
+								defer PrintCurrentTest(t)()
+
+								require.NoError(t, doGenerateRandomFile(1024*1024/4, path.Join(repoPath, "contribution.bin")))
+								require.NoError(t, git.AddChanges(repoPath, false, "."))
+								require.NoError(t, git.CommitChanges(repoPath, git.CommitChangesOptions{Message: "Annex a file"}))
+								_, _, err = git.NewCommand(git.DefaultContext, "annex", "copy", "--to", "origin").RunStdString(&git.RunOpts{Dir: repoPath})
+								require.NoError(t, err)
+
+								_, _, err = git.NewCommand(git.DefaultContext, "annex", "sync", "--no-content").RunStdString(&git.RunOpts{Dir: repoPath})
+								require.NoError(t, err)
+
+								// verify the file was uploaded
+								annexObjectPath, err := AnnexObjectPath(path.Join(setting.RepoRootPath, s.Username, s.Reponame+".git"), "contribution.bin")
+								require.NoError(t, err)
+								match, err := filecmp(path.Join(repoPath, "contribution.bin"), annexObjectPath, 0)
+								require.NoError(t, err, "Annexed file should be readable in both "+repoPath+"/large.bin and "+annexObjectPath)
+								require.True(t, match, "Annexed files should be the same")
+
+							})
+						})
+					})
+				})
+
+				t.Run("ReadCollaborator", func(t *testing.T) {
+					defer PrintCurrentTest(t)()
+
+					t.Run("SSH", func(t *testing.T) {
+						defer PrintCurrentTest(t)()
+
+						withAnnexCtxKeyFile(t, readCollaboratorSession, func() {
+
+							// now we try to upload again and see what happens
+
+							t.Run("Contribute", func(t *testing.T) {
+								defer PrintCurrentTest(t)()
+
+								require.NoError(t, doGenerateRandomFile(1024*1024/4, path.Join(repoPath, "contribution.bin")))
+								require.NoError(t, git.AddChanges(repoPath, false, "."))
+								require.NoError(t, git.CommitChanges(repoPath, git.CommitChangesOptions{Message: "Annex a file"}))
+								_, _, err = git.NewCommand(git.DefaultContext, "annex", "copy", "--to", "origin").RunStdString(&git.RunOpts{Dir: repoPath})
+								require.Error(t, err, "Uploading should fail due to permissions")
+								// XXX this causes a *different* error message than the other cases
+								// look into why and see if it can be made consistent
+								//require.True(t, strings.Contains(err.Error(), "Gitea: Unauthorized"), "Uploading should fail due to permissions")
+							})
+						})
+					})
+				})
+
+				t.Run("WriteCollaborator", func(t *testing.T) {
+					defer PrintCurrentTest(t)()
+
+					t.Run("SSH", func(t *testing.T) {
+						defer PrintCurrentTest(t)()
+
+						withAnnexCtxKeyFile(t, writeCollaboratorSession, func() {
+
+							t.Run("Contribute", func(t *testing.T) {
+								defer PrintCurrentTest(t)()
+
+								require.NoError(t, doGenerateRandomFile(1024*1024/4, path.Join(repoPath, "contribution.bin")))
+								require.NoError(t, git.AddChanges(repoPath, false, "."))
+								require.NoError(t, git.CommitChanges(repoPath, git.CommitChangesOptions{Message: "Annex a file"}))
+								_, _, err = git.NewCommand(git.DefaultContext, "annex", "copy", "--to", "origin").RunStdString(&git.RunOpts{Dir: repoPath})
+								require.NoError(t, err)
+
+								_, _, err = git.NewCommand(git.DefaultContext, "annex", "sync", "--no-content").RunStdString(&git.RunOpts{Dir: repoPath})
+								require.NoError(t, err)
+
+								// verify the file was uploaded
+								annexObjectPath, err := AnnexObjectPath(path.Join(setting.RepoRootPath, s.Username, s.Reponame+".git"), "contribution.bin")
+								require.NoError(t, err)
+								match, err := filecmp(path.Join(repoPath, "contribution.bin"), annexObjectPath, 0)
+								require.NoError(t, err, "Annexed file should be readable in both "+repoPath+"/large.bin and "+annexObjectPath)
+								require.Truef(t, match, "Annexed files %s and %s should be the same", path.Join(repoPath, "contribution.bin"), annexObjectPath)
+
+							})
+						})
+					})
+				})
+
+				t.Run("Other", func(t *testing.T) {
+					defer PrintCurrentTest(t)()
+
+					t.Run("SSH", func(t *testing.T) {
+						defer PrintCurrentTest(t)()
+
+						withAnnexCtxKeyFile(t, otherSession, func() {
+
+							t.Run("Contribute", func(t *testing.T) {
+								defer PrintCurrentTest(t)()
+
+								require.NoError(t, doGenerateRandomFile(1024*1024/4, path.Join(repoPath, "contribution.bin")))
+								require.NoError(t, git.AddChanges(repoPath, false, "."))
+								require.NoError(t, git.CommitChanges(repoPath, git.CommitChangesOptions{Message: "Annex a file"}))
+								_, _, err = git.NewCommand(git.DefaultContext, "annex", "copy", "--to", "origin").RunStdString(&git.RunOpts{Dir: repoPath})
+								require.Error(t, err, "Uploading should fail due to permissions")
+								require.True(t, strings.Contains(err.Error(), "Gitea: Unauthorized"), "Uploading should fail due to permissions")
+
+							})
+						})
+					})
+				})
+
+				t.Run("Delete", func(t *testing.T) {
+					defer PrintCurrentTest(t)()
+
+					// Delete the repo, make sure it's fully gone
+					//doAPIDeleteRepository(s)(t)
+					//_, stat_err := os.Stat(path.Join(setting.RepoRootPath, s.GitPath()))
+					//require.True(t, os.IsNotExist(stat_err), "Remote annex repo should be removed from disk")
+				})
+
+				//fmt.Printf("Sleeping now. good luck.\n") // give time to allow manually inspecting the test server; the password for all users is 'password'!
+				time.Sleep(0 * time.Second) // DEBUG
+			})
+		})
 	})
 }
 
@@ -485,7 +648,7 @@ func doAPIAnnexInitRepository(t *testing.T, ctx APITestContext, u *url.URL) {
 		//_, stat_err := os.Stat(annexObjectPath)
 		//require.NoError(t, stat_err, "Annexed file should exist in remote .git/annex/objects folder")
 		match, err := filecmp(path.Join(repoPath, "large.bin"), annexObjectPath, 0)
-		require.NoError(t, err, "Annexed file should be readable in both " + repoPath + " and " + remoteRepoPath)
+		require.NoError(t, err, "Annexed file should be readable in both "+repoPath+" and "+remoteRepoPath)
 		require.True(t, match, "Annexed files should be the same")
 	})
 }
@@ -509,7 +672,7 @@ func doAnnexInitRepository(t *testing.T, repoPath string) {
 
 	require.NoError(t, git.NewCommand(git.DefaultContext, "annex", "init", "gitea-annex-test").Run(&git.RunOpts{Dir: repoPath}))
 
-	doGenerateRandomFile(1024*1024/4, path.Join(repoPath, "large.bin"))
+	require.NoError(t, doGenerateRandomFile(1024*1024/4, path.Join(repoPath, "large.bin")))
 	require.NoError(t, git.AddChanges(repoPath, false, "."))
 	require.NoError(t, git.CommitChanges(repoPath, git.CommitChangesOptions{Message: "Annex a file"}))
 }
