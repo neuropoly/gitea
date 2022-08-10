@@ -72,13 +72,6 @@ func withKeyFile(t *testing.T, keyname string, callback func(string)) {
 	callback(keyFile)
 }
 
-func createHTTPUrl(ctx APITestContext, u *url.URL) *url.URL {
-	u2 := *u
-	u2.User = url.UserPassword(ctx.Username, userPassword) // userPassword is a module-level const, for the sake of testing
-	u2.Path = ctx.GitPath()
-	return &u2
-}
-
 func createSSHUrl(gitPath string, u *url.URL) *url.URL {
 	u2 := *u
 	u2.Scheme = "ssh"
