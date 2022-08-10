@@ -42,11 +42,6 @@ import (
 	"time" // DEBUG
 )
 
-/*
-
-Tests
-
-*/
 func TestGitAnnex(t *testing.T) {
 	/*
 		// TODO: look into how LFS did this
@@ -211,6 +206,9 @@ func doSSHTests(t *testing.T, u *url.URL, ctx APITestContext, user APITestContex
 
 		repoPath, err := os.MkdirTemp("", ctx.Reponame)
 		require.NoError(t, err)
+		defer util.RemoveAll(repoPath)
+
+		remoteRepoPath := path.Join(setting.RepoRootPath, ctx.GitPath())
 
 		// This test is split up into separate withKeyFile()s
 		// so it can isolate 'git annex copy' from 'git clone':
@@ -230,86 +228,165 @@ func doSSHTests(t *testing.T, u *url.URL, ctx APITestContext, user APITestContex
 			t.Run("Init", func(t *testing.T) {
 				defer PrintCurrentTest(t)()
 
-				_, _, err := git.NewCommand(git.DefaultContext, "annex", "init").RunStdString(&git.RunOpts{Dir: repoPath})
-				require.NoError(t, err)
-
-				// - method 0: 'git config remote.origin.annex-uuid'.
-				//   Demonstrates that 'git annex init' successfully contacted
-				//   the remote git-annex and was able to learn its ID number.
-				remoteAnnexUUID, _, err := git.NewCommand(git.DefaultContext, "config", "remote.origin.annex-uuid").RunStdString(&git.RunOpts{Dir: repoPath})
-				require.NoError(t, err)
-
-				remoteAnnexUUID = strings.TrimSpace(remoteAnnexUUID)
-				require.Regexp(t,
-					regexp.MustCompile("^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$"),
-					remoteAnnexUUID,
-					"git annex sync should have been able to download the remote's annex uuid")
-
-				// - method 1: 'git annex whereis'.
-				//   Demonstrates that git-annex understands the annexed file can be found in the remote annex.
-				annexWhereis, _, err := git.NewCommand(git.DefaultContext, "annex", "whereis", "large.bin").RunStdString(&git.RunOpts{Dir: repoPath})
-				require.NoError(t, err)
-				require.Regexp(t,
-					regexp.MustCompile(remoteAnnexUUID + " -- .* \\[origin\\]\n"),
-					annexWhereis,
-					"git annex whereis should report the file is uploaded to origin")
+				require.NoError(t, doAnnexInitTest(remoteRepoPath, repoPath))
 			})
 
 			t.Run("Download", func(t *testing.T) {
 				defer PrintCurrentTest(t)()
 
-				// NB: this test does something slightly different if run separately from "Init":
-				//     it first runs "git annex init" silently in the background.
-				//     This shouldn't change any results, but be aware in case it does.
-
-				_, _, err = git.NewCommand(git.DefaultContext, "annex", "copy", "--from", "origin").RunStdString(&git.RunOpts{Dir: repoPath})
-				require.NoError(t, err)
-
-				// verify the file was downloaded
-				localObjectPath, err := annexObjectPath(repoPath, "large.bin")
-				require.NoError(t, err)
-				//localObjectPath := path.Join(repoPath, "large.bin") // or, just compare against the checked-out file
-
-				remoteObjectPath, err := annexObjectPath(path.Join(setting.RepoRootPath, ctx.GitPath()), "large.bin")
-				require.NoError(t, err)
-
-				match, err := filecmp(localObjectPath, remoteObjectPath, 0)
-				require.NoErrorf(t, err, "Annexed file should be readable in both %s and %s", localObjectPath, remoteObjectPath)
-				require.True(t, match, "Annexed files should be the same")
+				require.NoError(t, doAnnexDownloadTest(remoteRepoPath, repoPath))
 			})
 
 			t.Run("Upload", func(t *testing.T) {
 				defer PrintCurrentTest(t)()
 
-				// NB: this test does something slightly different if run separately from "Init":
-				//     it first runs "git annex init" silently in the background.
-				//     This shouldn't change any results, but be aware in case it does.
-
-				require.NoError(t, generateRandomFile(1024*1024/4, path.Join(repoPath, "contribution.bin")))
-				require.NoError(t, git.AddChanges(repoPath, false, "."))
-				require.NoError(t, git.CommitChanges(repoPath, git.CommitChangesOptions{Message: "Annex another file"}))
-				_, _, err = git.NewCommand(git.DefaultContext, "annex", "copy", "--to", "origin").RunStdString(&git.RunOpts{Dir: repoPath})
-				require.NoError(t, err)
-
-				_, _, err = git.NewCommand(git.DefaultContext, "annex", "sync", "--no-content").RunStdString(&git.RunOpts{Dir: repoPath})
-				require.NoError(t, err)
-
-				// verify the file was uploaded
-				localObjectPath, err := annexObjectPath(repoPath, "contribution.bin")
-				require.NoError(t, err)
-				//localObjectPath := path.Join(repoPath, "contribution.bin") // or, just compare against the checked-out file
-
-				remoteObjectPath, err := annexObjectPath(path.Join(setting.RepoRootPath, ctx.GitPath()), "contribution.bin")
-				require.NoError(t, err)
-
-				match, err := filecmp(localObjectPath, remoteObjectPath, 0)
-				require.NoErrorf(t, err, "Annexed file should be readable in both %s and %s", localObjectPath, remoteObjectPath)
-				require.True(t, match, "Annexed files should be the same")
+				require.NoError(t, doAnnexUploadTest(remoteRepoPath, repoPath))
 			})
 		})
 	})
 }
 
+
+/* test that 'git annex init' works
+
+ precondition: repoPath contains a pre-cloned git repo with a git-annex branch
+
+ */
+func doAnnexInitTest(remoteRepoPath string, repoPath string) (err error) {
+	_, _, err = git.NewCommand(git.DefaultContext, "annex", "init").RunStdString(&git.RunOpts{Dir: repoPath})
+	if err != nil {
+		return err
+	}
+
+	// - method 0: 'git config remote.origin.annex-uuid'.
+	//   Demonstrates that 'git annex init' successfully contacted
+	//   the remote git-annex and was able to learn its ID number.
+	readAnnexUUID, _, err := git.NewCommand(git.DefaultContext, "config", "remote.origin.annex-uuid").RunStdString(&git.RunOpts{Dir: repoPath})
+	if err != nil {
+		return err
+	}
+	readAnnexUUID = strings.TrimSpace(readAnnexUUID)
+
+
+	match := regexp.MustCompile("^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$").MatchString(readAnnexUUID)
+	if !match {
+		return errors.New(fmt.Sprintf("'git config remote.origin.annex-uuid' should have been able to download the remote's uuid; but instead read '%s'.", readAnnexUUID))
+	}
+
+	remoteAnnexUUID, _, err := git.NewCommand(git.DefaultContext, "config", "annex.uuid").RunStdString(&git.RunOpts{Dir: remoteRepoPath})
+	if err != nil {
+		return err
+	}
+
+	remoteAnnexUUID = strings.TrimSpace(remoteAnnexUUID)
+	match = regexp.MustCompile("^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$").MatchString(remoteAnnexUUID)
+	if !match {
+		return errors.New(fmt.Sprintf("'git annex init' should have been able to download the remote's uuid; but instead read '%s'.", remoteAnnexUUID))
+	}
+
+	if readAnnexUUID != remoteAnnexUUID {
+		return errors.New(fmt.Sprintf("'git annex init' should have read the expected annex UUID '%s', but instead got '%s'", remoteAnnexUUID, readAnnexUUID))
+	}
+
+	// - method 1: 'git annex whereis'.
+	//   Demonstrates that git-annex understands the annexed file can be found in the remote annex.
+	annexWhereis, _, err := git.NewCommand(git.DefaultContext, "annex", "whereis", "large.bin").RunStdString(&git.RunOpts{Dir: repoPath})
+	if err != nil {
+		return err
+	}
+	match = regexp.MustCompile(regexp.QuoteMeta(remoteAnnexUUID) + " -- .* \\[origin\\]\n").MatchString(annexWhereis)
+	if !match {
+		return errors.New("'git annex whereis' should report large.bin is known to be in [origin]")
+	}
+
+	return nil
+}
+
+func doAnnexDownloadTest(remoteRepoPath string, repoPath string) (err error) {
+	// NB: this test does something slightly different if run separately from "doAnnexInitTest()":
+	//     it first runs "git annex init" silently in the background.
+	//     This shouldn't change any results, but be aware in case it does.
+
+	_, _, err = git.NewCommand(git.DefaultContext, "annex", "copy", "--from", "origin").RunStdString(&git.RunOpts{Dir: repoPath})
+	if err != nil {
+		return err
+	}
+
+	// verify the file was downloaded
+	localObjectPath, err := annexObjectPath(repoPath, "large.bin")
+	if err != nil {
+		return err
+	}
+	//localObjectPath := path.Join(repoPath, "large.bin") // or, just compare against the checked-out file
+
+	remoteObjectPath, err := annexObjectPath(remoteRepoPath, "large.bin")
+	if err != nil {
+		return err
+	}
+
+	match, err := filecmp(localObjectPath, remoteObjectPath, 0)
+	if err != nil {
+		return err
+	}
+	if !match {
+		return errors.New("Annexed files should be the same")
+	}
+
+	return nil
+}
+
+func doAnnexUploadTest(remoteRepoPath string, repoPath string) (err error) {
+	// NB: this test does something slightly different if run separately from "Init":
+	//     it first runs "git annex init" silently in the background.
+	//     This shouldn't change any results, but be aware in case it does.
+
+	err = generateRandomFile(1024*1024/4, path.Join(repoPath, "contribution.bin"))
+	if err != nil {
+		return err
+	}
+
+	err = git.AddChanges(repoPath, false, ".")
+	if err != nil {
+		return err
+	}
+
+	err = git.CommitChanges(repoPath, git.CommitChangesOptions{Message: "Annex another file"})
+	if err != nil {
+		return err
+	}
+
+	_, _, err = git.NewCommand(git.DefaultContext, "annex", "copy", "--to", "origin").RunStdString(&git.RunOpts{Dir: repoPath})
+	if err != nil {
+		return err
+	}
+
+	_, _, err = git.NewCommand(git.DefaultContext, "annex", "sync", "--no-content").RunStdString(&git.RunOpts{Dir: repoPath})
+	if err != nil {
+		return err
+	}
+
+	// verify the file was uploaded
+	localObjectPath, err := annexObjectPath(repoPath, "contribution.bin")
+	if err != nil {
+		return err
+	}
+	//localObjectPath := path.Join(repoPath, "contribution.bin") // or, just compare against the checked-out file
+
+	remoteObjectPath, err := annexObjectPath(remoteRepoPath, "contribution.bin")
+	if err != nil {
+		return err
+	}
+
+	match, err := filecmp(localObjectPath, remoteObjectPath, 0)
+	if err != nil {
+		return err
+	}
+	if !match {
+		return errors.New("Annexed files should be the same")
+	}
+
+	return nil
+}
 
 // ---- Helpers ----
 
