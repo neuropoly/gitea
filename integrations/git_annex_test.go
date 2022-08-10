@@ -829,6 +829,7 @@ func doInitAnnexRepository(t *testing.T, repoPath string) {
 	// without this, git-annex's default config annexes every file larger than some number of megabytes
 	f, err := os.Create(path.Join(repoPath, ".gitattributes"))
 	require.NoError(t, err)
+	f.WriteString("*                   annex.largefiles=nothing")
 	f.WriteString("*.bin  filter=annex annex.largefiles=anything")
 	f.Close()
 	require.NoError(t, git.AddChanges(repoPath, false, "."))
