@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: 'lts/*'
 
-      - name: Build Release Assets
+      - name: Build ./gitea
         run: |
           TAGS="bindata sqlite sqlite_unlock_notify" make build
 
