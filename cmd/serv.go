@@ -201,11 +201,11 @@ func runServ(c *cli.Context) error {
 	if verb == gitAnnexShellVerb {
 		// if !setting.Annex.Enabled { // TODO: https://github.com/neuropoly/gitea/issues/8
 		if false {
-			return fail(ctx, "Unknown git command", "git-annex request over SSH denied, git-annex support is disabled")
+			return fail("Unknown git command", "git-annex request over SSH denied, git-annex support is disabled")
 		}
 
 		if len(words) < 3 {
-			return fail(ctx, "Too few arguments", "Too few arguments in cmd: %s", cmd)
+			return fail("Too few arguments", "Too few arguments in cmd: %s", cmd)
 		}
 
 		// git-annex always puts the repo in words[2], unlike most other
@@ -229,7 +229,7 @@ func runServ(c *cli.Context) error {
 		// git-annex-shell demands an absolute path
 		absRepoPath, err := filepath.Abs(filepath.Join(setting.RepoRootPath, repoPath))
 		if err != nil {
-			return fail(ctx, "Error locating repoPath", "%v", err)
+			return fail("Error locating repoPath", "%v", err)
 		}
 		words[2] = absRepoPath
 	} else {
