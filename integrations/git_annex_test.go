@@ -48,9 +48,6 @@ func TestGitAnnex(t *testing.T) {
 		}
 	*/
 
-	trueBool := true // this is silly but there's places it's needed
-	falseBool := !trueBool
-
 	// Some guidelines:
 	// a APITestContext is an awkward union of session credential + username + target repo
 	// which is assumed to be owned by that username; if you want to target a different
@@ -64,7 +61,8 @@ func TestGitAnnex(t *testing.T) {
 			// create a public repo
 			ctx := NewAPITestContext(t, "user2", "annex-public")
 			doAPICreateRepository(ctx, false)(t)
-			doAPIEditRepository(ctx, &api.EditRepoOption{Private: &falseBool})(t)
+			private := false // this API takes pointers, so we need a variable
+			doAPIEditRepository(ctx, &api.EditRepoOption{Private: &private})(t)
 
 			// double-check it's public
 			repo, err := repo_model.GetRepositoryByOwnerAndName(ctx.Username, ctx.Reponame)
