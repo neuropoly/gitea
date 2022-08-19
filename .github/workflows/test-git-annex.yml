@@ -1,0 +1,32 @@
+name: Test Git Annex
+  # Here we just test the git-annex feature, leaving
+  # the full test suite for upstream to watch over.
+
+on:
+  push:
+  workflow_call: # so release.yml can depend on this (https://stackoverflow.com/a/71489231)
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y make git git-annex
+      # per README.md, building needs Go 1.17 and Node LTS
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '^1.17' # The Go version to download (if necessary) and use.
+      - uses: actions/setup-node@v2
+        with:
+          node-version: 'lts/*'
+
+      - name: Build ./gitea
+        run: |
+          TAGS="bindata sqlite sqlite_unlock_notify" make backend
+
+      - name: Test
+        run: |
+          make 'test-sqlite#TestGitAnnexPermissions'
