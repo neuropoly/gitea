@@ -79,7 +79,8 @@ func TestGitAnnex(t *testing.T) {
 				repoURL := createSSHUrl(ctx.GitPath(), u)
 				doGitClone(repoPath, repoURL)(t)
 
-				doInitAnnexRepository(t, repoPath)
+				err = doInitAnnexRepository(repoPath)
+				require.NoError(t, err, "git-annex repository should have been initialized")
 
 				_, _, err = git.NewCommand(git.DefaultContext, "annex", "sync", "--content").RunStdString(&git.RunOpts{Dir: repoPath})
 				require.NoError(t, err)
@@ -338,7 +339,8 @@ func TestGitAnnex(t *testing.T) {
 				repoURL := createSSHUrl(ctx.GitPath(), u)
 				doGitClone(repoPath, repoURL)(t)
 
-				doInitAnnexRepository(t, repoPath)
+				err = doInitAnnexRepository(repoPath)
+				require.NoError(t, err, "git-annex repository should have been initialized")
 
 				_, _, err = git.NewCommand(git.DefaultContext, "annex", "sync", "--content").RunStdString(&git.RunOpts{Dir: repoPath})
 				require.NoError(t, err)
@@ -813,26 +815,56 @@ see integrations/gitea-repositories-meta/ and models/fixtures/repository.yml.
 
 However we reuse this template for -different- repos.
 */
-func doInitAnnexRepository(t *testing.T, repoPath string) {
+func doInitAnnexRepository(repoPath string) (error) {
 	// set up what files should be annexed
 	// in this case, all *.bin  files will be annexed
 	// without this, git-annex's default config annexes every file larger than some number of megabytes
 	f, err := os.Create(path.Join(repoPath, ".gitattributes"))
-	require.NoError(t, err)
-	f.WriteString("*                   annex.largefiles=nothing")
-	f.WriteString("*.bin  filter=annex annex.largefiles=anything")
+	if err != nil {
+		return err
+	}
+
+	_, err = f.WriteString("*                   annex.largefiles=nothing")
+	if err != nil {
+		return err
+	}
+	_, err = f.WriteString("*.bin  filter=annex annex.largefiles=anything")
+	if err != nil {
+		return err
+	}
 	f.Close()
-	require.NoError(t, git.AddChanges(repoPath, false, "."))
-	require.NoError(t, git.CommitChanges(repoPath, git.CommitChangesOptions{Message: "Configure git-annex settings"}))
+
+	err = git.AddChanges(repoPath, false, ".")
+	if err != nil {
+		return err
+	}
+	err = git.CommitChanges(repoPath, git.CommitChangesOptions{Message: "Configure git-annex settings"})
+	if err != nil {
+		return err
+	}
 
 	// 'git annex init'
 	// 'gitea-annex-test' is there to avoid the nuisance comment getting stored.
-	require.NoError(t, git.NewCommand(git.DefaultContext, "annex", "init", "gitea-annex-test").Run(&git.RunOpts{Dir: repoPath}))
+	err = git.NewCommand(git.DefaultContext, "annex", "init", "gitea-annex-test").Run(&git.RunOpts{Dir: repoPath})
+	if err != nil {
+		return err
+	}
 
 	// add a file to the annex
-	require.NoError(t, generateRandomFile(1024*1024/4, path.Join(repoPath, "large.bin")))
-	require.NoError(t, git.AddChanges(repoPath, false, "."))
-	require.NoError(t, git.CommitChanges(repoPath, git.CommitChangesOptions{Message: "Annex a file"}))
+	err = generateRandomFile(1024*1024/4, path.Join(repoPath, "large.bin"))
+	if err != nil {
+		return err
+	}
+	err = git.AddChanges(repoPath, false, ".")
+	if err != nil {
+		return err
+	}
+	err = git.CommitChanges(repoPath, git.CommitChangesOptions{Message: "Annex a file"})
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 /* given a git repo and a path to an annexed file in it (assumed to be committed to its HEAD),
