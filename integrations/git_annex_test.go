@@ -25,7 +25,19 @@ import (
 	"code.gitea.io/gitea/modules/util"
 )
 
-func TestGitAnnex(t *testing.T) {
+// Some guidelines:
+//
+// * a APITestContext is an awkward union of session credential + username + target repo
+//   which is assumed to be owned by that username; if you want to target a different
+//   repo, you need to edit its .Reponame or just ignore it and write "username/reponame.git"
+
+
+/*
+ Test that permissions are enforced on git-annex-shell commands.
+
+ Along the way, test that uploading, downloading, and deleting all work.
+*/
+func TestGitAnnexPermissions(t *testing.T) {
 	/*
 		// TODO: look into how LFS did this
 		if !setting.Annex.Enabled {
@@ -33,10 +45,14 @@ func TestGitAnnex(t *testing.T) {
 		}
 	*/
 
-	// Some guidelines:
-	// a APITestContext is an awkward union of session credential + username + target repo
-	// which is assumed to be owned by that username; if you want to target a different
-	// repo, you need to edit its .Reponame or just ignore it and write "username/reponame.git"
+
+	// Each case below is split so that 'clone' is done as
+	// the repo owner, but 'copy' as the user under test.
+	//
+	// Otherwise, in cases where permissions block the
+	// initial 'clone', the test would simply end there
+	// and never verify if permissions apply properly to
+	// 'annex copy' -- potentially leaving a security gap.
 
 	onGiteaRun(t, func(t *testing.T, u *url.URL) {
 
@@ -44,20 +60,22 @@ func TestGitAnnex(t *testing.T) {
 			defer PrintCurrentTest(t)()
 
 			// create a public repo
-			ctx := NewAPITestContext(t, "user2", "annex-public")
-			doAPICreateRepository(ctx, false)(t)
+			ownerCtx := NewAPITestContext(t, "user2", "annex-public")
+			doAPICreateRepository(ownerCtx, false)(t)
 			private := false // this API takes pointers, so we need a variable
-			doAPIEditRepository(ctx, &api.EditRepoOption{Private: &private})(t)
+			doAPIEditRepository(ownerCtx, &api.EditRepoOption{Private: &private})(t)
 
 			// double-check it's public
-			repo, err := repo_model.GetRepositoryByOwnerAndName(ctx.Username, ctx.Reponame)
+			repo, err := repo_model.GetRepositoryByOwnerAndName(ownerCtx.Username, ownerCtx.Reponame)
 			require.NoError(t, err)
 			require.False(t, repo.IsPrivate)
 
-			// fill in fixture data
-			// TODO: replace this with a pre-made repo in integrations/gitea-repositories-meta/ ?
-			withAnnexCtxKeyFile(t, ctx, func() {
-				repoURL := createSSHUrl(ctx.GitPath(), u)
+			// Remote addresses of the repo
+			repoURL := createSSHUrl(ownerCtx.GitPath(), u) // remote git URL
+			remoteRepoPath := path.Join(setting.RepoRootPath, ownerCtx.GitPath()) // path on disk -- which can be examined directly because we're testing from localhost
+
+			// Fill in fixture data
+			withAnnexCtxKeyFile(t, ownerCtx, func() {
 				err = doInitRemoteAnnexRepository(t, repoURL)
 				require.NoError(t, err, "git-annex repository should have been initialized")
 			})
@@ -66,19 +84,13 @@ func TestGitAnnex(t *testing.T) {
 			// We leave Reponame blank because we don't actually then later add it according to each case if needed
 			//
 			// NB: these usernames need to match appropriate entries in models/fixtures/user.yml
-			ownerCtx := NewAPITestContext(t, ctx.Username, "")
 			writerCtx := NewAPITestContext(t, "user5", "")
 			readerCtx := NewAPITestContext(t, "user4", "")
 			outsiderCtx := NewAPITestContext(t, "user8", "") // a user with no specific access
-			// Note: there's also full anonymous access, which is only available for public HTTP repos;
-			// it should behave the same as 'outsider' but we (will) test it separately below anyway
-
-			//httpURL := createSSHUrl(ctx.GitPath(), u) // XXX this puts username and password into the URL
-			// anonHTTPUrl := ???
 
 			// set up collaborators
-			doAPIAddCollaborator(ctx, readerCtx.Username, perm.AccessModeRead)(t)
-			doAPIAddCollaborator(ctx, writerCtx.Username, perm.AccessModeWrite)(t)
+			doAPIAddCollaborator(ownerCtx, readerCtx.Username, perm.AccessModeRead)(t)
+			doAPIAddCollaborator(ownerCtx, writerCtx.Username, perm.AccessModeWrite)(t)
 
 			// tests
 			t.Run("Owner", func(t *testing.T) {
@@ -87,25 +99,11 @@ func TestGitAnnex(t *testing.T) {
 				t.Run("SSH", func(t *testing.T) {
 					defer PrintCurrentTest(t)()
 
-					repoURL := createSSHUrl(ctx.GitPath(), u)
-
-					repoPath, err := os.MkdirTemp("", ctx.Reponame)
+					repoPath, err := os.MkdirTemp("", ownerCtx.Reponame)
 					require.NoError(t, err)
 					defer util.RemoveAll(repoPath)
 
-					remoteRepoPath := path.Join(setting.RepoRootPath, ctx.GitPath())
-
-					// This test is split up into separate withKeyFile()s
-					// so it can isolate 'git annex copy' from 'git clone':
-					//
-					// 'clone' is done as the repo owner, to guarantee it
-					// succeeds, but 'copy' is done as the user under test.
-					//
-					// Otherwise, in cases where permissions block the
-					// initial 'clone', the test would simply end there
-					// and never verify if permissions apply properly to
-					// 'annex copy' -- potentially leaving a security gap.
-					withAnnexCtxKeyFile(t, ctx, func() {
+					withAnnexCtxKeyFile(t, ownerCtx, func() {
 						doGitClone(repoPath, repoURL)(t)
 					})
 
@@ -137,25 +135,11 @@ func TestGitAnnex(t *testing.T) {
 				t.Run("SSH", func(t *testing.T) {
 					defer PrintCurrentTest(t)()
 
-					repoURL := createSSHUrl(ctx.GitPath(), u)
-
-					repoPath, err := os.MkdirTemp("", ctx.Reponame)
+					repoPath, err := os.MkdirTemp("", ownerCtx.Reponame)
 					require.NoError(t, err)
 					defer util.RemoveAll(repoPath)
 
-					remoteRepoPath := path.Join(setting.RepoRootPath, ctx.GitPath())
-
-					// This test is split up into separate withKeyFile()s
-					// so it can isolate 'git annex copy' from 'git clone':
-					//
-					// 'clone' is done as the repo owner, to guarantee it
-					// succeeds, but 'copy' is done as the user under test.
-					//
-					// Otherwise, in cases where permissions block the
-					// initial 'clone', the test would simply end there
-					// and never verify if permissions apply properly to
-					// 'annex copy' -- potentially leaving a security gap.
-					withAnnexCtxKeyFile(t, ctx, func() {
+					withAnnexCtxKeyFile(t, ownerCtx, func() {
 						doGitClone(repoPath, repoURL)(t)
 					})
 
@@ -187,25 +171,11 @@ func TestGitAnnex(t *testing.T) {
 				t.Run("SSH", func(t *testing.T) {
 					defer PrintCurrentTest(t)()
 
-					repoURL := createSSHUrl(ctx.GitPath(), u)
-
-					repoPath, err := os.MkdirTemp("", ctx.Reponame)
+					repoPath, err := os.MkdirTemp("", ownerCtx.Reponame)
 					require.NoError(t, err)
 					defer util.RemoveAll(repoPath)
 
-					remoteRepoPath := path.Join(setting.RepoRootPath, ctx.GitPath())
-
-					// This test is split up into separate withKeyFile()s
-					// so it can isolate 'git annex copy' from 'git clone':
-					//
-					// 'clone' is done as the repo owner, to guarantee it
-					// works, but 'copy' is done as the user under test.
-					//
-					// Otherwise, in cases where permissions block the
-					// initial 'clone', the test would simply end there
-					// and never verify if permissions apply properly to
-					// 'annex copy' -- potentially leaving a security gap.
-					withAnnexCtxKeyFile(t, ctx, func() {
+					withAnnexCtxKeyFile(t, ownerCtx, func() {
 						doGitClone(repoPath, repoURL)(t)
 					})
 
@@ -237,25 +207,11 @@ func TestGitAnnex(t *testing.T) {
 				t.Run("SSH", func(t *testing.T) {
 					defer PrintCurrentTest(t)()
 
-					repoURL := createSSHUrl(ctx.GitPath(), u)
-
-					repoPath, err := os.MkdirTemp("", ctx.Reponame)
+					repoPath, err := os.MkdirTemp("", ownerCtx.Reponame)
 					require.NoError(t, err)
 					defer util.RemoveAll(repoPath)
 
-					remoteRepoPath := path.Join(setting.RepoRootPath, ctx.GitPath())
-
-					// This test is split up into separate withKeyFile()s
-					// so it can isolate 'git annex copy' from 'git clone':
-					//
-					// 'clone' is done as the repo owner, to guarantee it
-					// works, but 'copy' is done as the user under test.
-					//
-					// Otherwise, in cases where permissions block the
-					// initial 'clone', the test would simply end there
-					// and never verify if permissions apply properly to
-					// 'annex copy' -- potentially leaving a security gap.
-					withAnnexCtxKeyFile(t, ctx, func() {
+					withAnnexCtxKeyFile(t, ownerCtx, func() {
 						doGitClone(repoPath, repoURL)(t)
 					})
 
@@ -285,8 +241,8 @@ func TestGitAnnex(t *testing.T) {
 				defer PrintCurrentTest(t)()
 
 				// Delete the repo, make sure it's fully gone
-				doAPIDeleteRepository(ctx)(t)
-				_, stat_err := os.Stat(path.Join(setting.RepoRootPath, ctx.GitPath()))
+				doAPIDeleteRepository(ownerCtx)(t)
+				_, stat_err := os.Stat(remoteRepoPath)
 				require.True(t, os.IsNotExist(stat_err), "Remote annex repo should be removed from disk")
 			})
 		})
@@ -295,19 +251,20 @@ func TestGitAnnex(t *testing.T) {
 			defer PrintCurrentTest(t)()
 
 			// create a private repo
-			ctx := NewAPITestContext(t, "user2", "annex-private")
-			doAPICreateRepository(ctx, false)(t)
+			ownerCtx := NewAPITestContext(t, "user2", "annex-private")
+			doAPICreateRepository(ownerCtx, false)(t)
 
 			// double-check it's private
-			repo, err := repo_model.GetRepositoryByOwnerAndName(ctx.Username, ctx.Reponame)
+			repo, err := repo_model.GetRepositoryByOwnerAndName(ownerCtx.Username, ownerCtx.Reponame)
 			require.NoError(t, err)
 			require.True(t, repo.IsPrivate)
 
-			// fill in fixture data
-			// TODO: replace this with a pre-made repo in integrations/gitea-repositories-meta/ ?
-			withAnnexCtxKeyFile(t, ctx, func() {
-				repoURL := createSSHUrl(ctx.GitPath(), u)
+			// Remote addresses of the repo
+			repoURL := createSSHUrl(ownerCtx.GitPath(), u) // remote git URL
+			remoteRepoPath := path.Join(setting.RepoRootPath, ownerCtx.GitPath()) // path on disk -- which can be examined directly because we're testing from localhost
 
+			// Fill in fixture data
+			withAnnexCtxKeyFile(t, ownerCtx, func() {
 				err = doInitRemoteAnnexRepository(t, repoURL)
 				require.NoError(t, err, "git-annex repository should have been initialized")
 			})
@@ -316,19 +273,15 @@ func TestGitAnnex(t *testing.T) {
 			// We leave Reponame blank because we don't actually then later add it according to each case if needed
 			//
 			// NB: these usernames need to match appropriate entries in models/fixtures/user.yml
-			ownerCtx := NewAPITestContext(t, ctx.Username, "")
 			writerCtx := NewAPITestContext(t, "user5", "")
 			readerCtx := NewAPITestContext(t, "user4", "")
 			outsiderCtx := NewAPITestContext(t, "user8", "") // a user with no specific access
 			// Note: there's also full anonymous access, which is only available for public HTTP repos;
 			// it should behave the same as 'outsider' but we (will) test it separately below anyway
 
-			//httpURL := createSSHUrl(ctx.GitPath(), u) // XXX this puts username and password into the URL
-			// anonHTTPUrl := ???
-
 			// set up collaborators
-			doAPIAddCollaborator(ctx, readerCtx.Username, perm.AccessModeRead)(t)
-			doAPIAddCollaborator(ctx, writerCtx.Username, perm.AccessModeWrite)(t)
+			doAPIAddCollaborator(ownerCtx, readerCtx.Username, perm.AccessModeRead)(t)
+			doAPIAddCollaborator(ownerCtx, writerCtx.Username, perm.AccessModeWrite)(t)
 
 			// tests
 			t.Run("Owner", func(t *testing.T) {
@@ -337,25 +290,11 @@ func TestGitAnnex(t *testing.T) {
 				t.Run("SSH", func(t *testing.T) {
 					defer PrintCurrentTest(t)()
 
-					repoURL := createSSHUrl(ctx.GitPath(), u)
-
-					repoPath, err := os.MkdirTemp("", ctx.Reponame)
+					repoPath, err := os.MkdirTemp("", ownerCtx.Reponame)
 					require.NoError(t, err)
 					defer util.RemoveAll(repoPath)
 
-					remoteRepoPath := path.Join(setting.RepoRootPath, ctx.GitPath())
-
-					// This test is split up into separate withKeyFile()s
-					// so it can isolate 'git annex copy' from 'git clone':
-					//
-					// 'clone' is done as the repo owner, to guarantee it
-					// works, but 'copy' is done as the user under test.
-					//
-					// Otherwise, in cases where permissions block the
-					// initial 'clone', the test would simply end there
-					// and never verify if permissions apply properly to
-					// 'annex copy' -- potentially leaving a security gap.
-					withAnnexCtxKeyFile(t, ctx, func() {
+					withAnnexCtxKeyFile(t, ownerCtx, func() {
 						doGitClone(repoPath, repoURL)(t)
 					})
 
@@ -387,25 +326,11 @@ func TestGitAnnex(t *testing.T) {
 				t.Run("SSH", func(t *testing.T) {
 					defer PrintCurrentTest(t)()
 
-					repoURL := createSSHUrl(ctx.GitPath(), u)
-
-					repoPath, err := os.MkdirTemp("", ctx.Reponame)
+					repoPath, err := os.MkdirTemp("", ownerCtx.Reponame)
 					require.NoError(t, err)
 					defer util.RemoveAll(repoPath)
 
-					remoteRepoPath := path.Join(setting.RepoRootPath, ctx.GitPath())
-
-					// This test is split up into separate withKeyFile()s
-					// so it can isolate 'git annex copy' from 'git clone':
-					//
-					// 'clone' is done as the repo owner, to guarantee it
-					// works, but 'copy' is done as the user under test.
-					//
-					// Otherwise, in cases where permissions block the
-					// initial 'clone', the test would simply end there
-					// and never verify if permissions apply properly to
-					// 'annex copy' -- potentially leaving a security gap.
-					withAnnexCtxKeyFile(t, ctx, func() {
+					withAnnexCtxKeyFile(t, ownerCtx, func() {
 						doGitClone(repoPath, repoURL)(t)
 					})
 
@@ -437,25 +362,11 @@ func TestGitAnnex(t *testing.T) {
 				t.Run("SSH", func(t *testing.T) {
 					defer PrintCurrentTest(t)()
 
-					repoURL := createSSHUrl(ctx.GitPath(), u)
-
-					repoPath, err := os.MkdirTemp("", ctx.Reponame)
+					repoPath, err := os.MkdirTemp("", ownerCtx.Reponame)
 					require.NoError(t, err)
 					defer util.RemoveAll(repoPath)
 
-					remoteRepoPath := path.Join(setting.RepoRootPath, ctx.GitPath())
-
-					// This test is split up into separate withKeyFile()s
-					// so it can isolate 'git annex copy' from 'git clone':
-					//
-					// 'clone' is done as the repo owner, to guarantee it
-					// works, but 'copy' is done as the user under test.
-					//
-					// Otherwise, in cases where permissions block the
-					// initial 'clone', the test would simply end there
-					// and never verify if permissions apply properly to
-					// 'annex copy' -- potentially leaving a security gap.
-					withAnnexCtxKeyFile(t, ctx, func() {
+					withAnnexCtxKeyFile(t, ownerCtx, func() {
 						doGitClone(repoPath, repoURL)(t)
 					})
 
@@ -487,25 +398,11 @@ func TestGitAnnex(t *testing.T) {
 				t.Run("SSH", func(t *testing.T) {
 					defer PrintCurrentTest(t)()
 
-					repoURL := createSSHUrl(ctx.GitPath(), u)
-
-					repoPath, err := os.MkdirTemp("", ctx.Reponame)
+					repoPath, err := os.MkdirTemp("", ownerCtx.Reponame)
 					require.NoError(t, err)
 					defer util.RemoveAll(repoPath)
 
-					remoteRepoPath := path.Join(setting.RepoRootPath, ctx.GitPath())
-
-					// This test is split up into separate withKeyFile()s
-					// so it can isolate 'git annex copy' from 'git clone':
-					//
-					// 'clone' is done as the repo owner, to guarantee it
-					// works, but 'copy' is done as the user under test.
-					//
-					// Otherwise, in cases where permissions block the
-					// initial 'clone', the test would simply end there
-					// and never verify if permissions apply properly to
-					// 'annex copy' -- potentially leaving a security gap.
-					withAnnexCtxKeyFile(t, ctx, func() {
+					withAnnexCtxKeyFile(t, ownerCtx, func() {
 						doGitClone(repoPath, repoURL)(t)
 					})
 
@@ -535,8 +432,8 @@ func TestGitAnnex(t *testing.T) {
 				defer PrintCurrentTest(t)()
 
 				// Delete the repo, make sure it's fully gone
-				doAPIDeleteRepository(ctx)(t)
-				_, stat_err := os.Stat(path.Join(setting.RepoRootPath, ctx.GitPath()))
+				doAPIDeleteRepository(ownerCtx)(t)
+				_, stat_err := os.Stat(remoteRepoPath)
 				require.True(t, os.IsNotExist(stat_err), "Remote annex repo should be removed from disk")
 			})
 		})
