@@ -766,7 +766,7 @@ func generateRandomFile(size int, path string) (err error) {
 func filecmp(file1, file2 string, chunkSize int) (bool, error) {
 	// Check file size ...
 	if chunkSize == 0 {
-		chunkSize = 2 << 12
+		chunkSize = 4 * 1024
 	}
 
 	f1, err := os.Open(file1)
