@@ -68,20 +68,9 @@ func TestGitAnnex(t *testing.T) {
 			// fill in fixture data
 			// TODO: replace this with a pre-made repo in integrations/gitea-repositories-meta/ ?
 			withAnnexCtxKeyFile(t, ctx, func() {
-				// note: this clone is immediately thrown away;
-				// the tests below reclone it, to test end-to-end.
-				repoPath, err := os.MkdirTemp("", ctx.Reponame)
-				require.NoError(t, err)
-				defer util.RemoveAll(repoPath)
-
 				repoURL := createSSHUrl(ctx.GitPath(), u)
-				doGitClone(repoPath, repoURL)(t)
-
-				err = doInitAnnexRepository(repoPath)
+				err = doInitRemoteAnnexRepository(t, repoURL)
 				require.NoError(t, err, "git-annex repository should have been initialized")
-
-				_, _, err = git.NewCommand(git.DefaultContext, "annex", "sync", "--content").RunStdString(&git.RunOpts{Dir: repoPath})
-				require.NoError(t, err)
 			})
 
 			// Different sessions, so we can test different permissions.
@@ -121,7 +110,7 @@ func TestGitAnnex(t *testing.T) {
 					// so it can isolate 'git annex copy' from 'git clone':
 					//
 					// 'clone' is done as the repo owner, to guarantee it
-					// works, but 'copy' is done as the user under test.
+					// succeeds, but 'copy' is done as the user under test.
 					//
 					// Otherwise, in cases where permissions block the
 					// initial 'clone', the test would simply end there
@@ -171,7 +160,7 @@ func TestGitAnnex(t *testing.T) {
 					// so it can isolate 'git annex copy' from 'git clone':
 					//
 					// 'clone' is done as the repo owner, to guarantee it
-					// works, but 'copy' is done as the user under test.
+					// succeeds, but 'copy' is done as the user under test.
 					//
 					// Otherwise, in cases where permissions block the
 					// initial 'clone', the test would simply end there
@@ -328,20 +317,10 @@ func TestGitAnnex(t *testing.T) {
 			// fill in fixture data
 			// TODO: replace this with a pre-made repo in integrations/gitea-repositories-meta/ ?
 			withAnnexCtxKeyFile(t, ctx, func() {
-				// note: this clone is immediately thrown away;
-				// the tests below reclone it, to test end-to-end.
-				repoPath, err := os.MkdirTemp("", ctx.Reponame)
-				require.NoError(t, err)
-				defer util.RemoveAll(repoPath)
-
 				repoURL := createSSHUrl(ctx.GitPath(), u)
-				doGitClone(repoPath, repoURL)(t)
 
-				err = doInitAnnexRepository(repoPath)
+				err = doInitRemoteAnnexRepository(t, repoURL)
 				require.NoError(t, err, "git-annex repository should have been initialized")
-
-				_, _, err = git.NewCommand(git.DefaultContext, "annex", "sync", "--content").RunStdString(&git.RunOpts{Dir: repoPath})
-				require.NoError(t, err)
 			})
 
 			// Different sessions, so we can test different permissions.
@@ -814,6 +793,38 @@ func doInitAnnexRepository(repoPath string) error {
 		return err
 	}
 	err = git.CommitChanges(repoPath, git.CommitChangesOptions{Message: "Annex a file"})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+/* Initialize a repo with some baseline annexed and non-annexed files.
+
+TODO: this could be replaced with a fixture repo;
+see integrations/gitea-repositories-meta/ and models/fixtures/repository.yml.
+
+However we reuse this template for -different- repos.
+
+TODO: This has to take a testing.T, but only because it reuses a routine
+      written in the other integration tests which expects it.
+      It would be cleaner if it didn't have to.
+*/
+func doInitRemoteAnnexRepository(t *testing.T, repoURL *url.URL) error {
+	repoPath, err := os.MkdirTemp("", path.Base(repoURL.Path))
+	if err != nil {
+		return err
+	}
+	// This clone is immediately thrown away, which
+	// helps force the tests to be end-to-end.
+	defer util.RemoveAll(repoPath)
+
+	doGitClone(repoPath, repoURL)(t)
+
+	err = doInitAnnexRepository(repoPath)
+
+	_, _, err = git.NewCommand(git.DefaultContext, "annex", "sync", "--content").RunStdString(&git.RunOpts{Dir: repoPath})
 	if err != nil {
 		return err
 	}
