@@ -67,7 +67,7 @@ func TestGitAnnex(t *testing.T) {
 			// double-check it's public
 			repo, err := repo_model.GetRepositoryByOwnerAndName(ctx.Username, ctx.Reponame)
 			require.NoError(t, err)
-			require.True(t, !repo.IsPrivate)
+			require.False(t, repo.IsPrivate)
 
 			// fill in fixture data
 			// TODO: replace this with a pre-made repo in integrations/gitea-repositories-meta/ ?
