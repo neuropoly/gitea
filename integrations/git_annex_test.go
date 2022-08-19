@@ -769,7 +769,7 @@ see integrations/gitea-repositories-meta/ and models/fixtures/repository.yml.
 
 However we reuse this template for -different- repos.
 */
-func doInitAnnexRepository(repoPath string) (error) {
+func doInitAnnexRepository(repoPath string) error {
 	// set up what files should be annexed
 	// in this case, all *.bin  files will be annexed
 	// without this, git-annex's default config annexes every file larger than some number of megabytes
