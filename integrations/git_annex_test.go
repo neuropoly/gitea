@@ -19,10 +19,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"testing"
 
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"math/rand"
 	"net/url"
 	"os"
@@ -656,7 +654,7 @@ func doAnnexDownloadTest(remoteRepoPath string, repoPath string) (err error) {
 		return err
 	}
 
-	match, err := filecmp(localObjectPath, remoteObjectPath, 0)
+	match, err := util.FileCmp(localObjectPath, remoteObjectPath, 0)
 	if err != nil {
 		return err
 	}
@@ -709,7 +707,7 @@ func doAnnexUploadTest(remoteRepoPath string, repoPath string) (err error) {
 		return err
 	}
 
-	match, err := filecmp(localObjectPath, remoteObjectPath, 0)
+	match, err := util.FileCmp(localObjectPath, remoteObjectPath, 0)
 	if err != nil {
 		return err
 	}
@@ -760,50 +758,6 @@ func generateRandomFile(size int, path string) (err error) {
 	}
 
 	return nil
-}
-
-// https://stackoverflow.com/a/30038571
-func filecmp(file1, file2 string, chunkSize int) (bool, error) {
-	// Check file size ...
-	if chunkSize == 0 {
-		chunkSize = 4 * 1024
-	}
-
-	f1, err := os.Open(file1)
-	if err != nil {
-		return false, err
-	}
-	defer f1.Close()
-
-	f2, err := os.Open(file2)
-	if err != nil {
-		return false, err
-	}
-	defer f2.Close()
-
-	for {
-		b1 := make([]byte, chunkSize)
-		_, err1 := f1.Read(b1)
-		if err1 != nil && err1 != io.EOF {
-			return false, err1
-		}
-
-		b2 := make([]byte, chunkSize)
-		_, err2 := f2.Read(b2)
-		if err2 != nil && err2 != io.EOF {
-			return false, err2
-		}
-
-		if err1 == io.EOF && err2 == io.EOF {
-			return true, nil
-		} else if err1 != nil || err2 != nil {
-			return false, nil
-		}
-
-		if !bytes.Equal(b1, b2) {
-			return false, nil
-		}
-	}
 }
 
 // ---- Annex-specific helpers ----
