@@ -633,7 +633,7 @@ func doAnnexInitTest(remoteRepoPath string, repoPath string) (err error) {
 
 func doAnnexDownloadTest(remoteRepoPath string, repoPath string) (err error) {
 	// NB: this test does something slightly different if run separately from "doAnnexInitTest()":
-	//     it first runs "git annex init" silently in the background.
+	//     "git annex copy" will notice and run "git annex init", silently.
 	//     This shouldn't change any results, but be aware in case it does.
 
 	_, _, err = git.NewCommand(git.DefaultContext, "annex", "copy", "--from", "origin").RunStdString(&git.RunOpts{Dir: repoPath})
