@@ -36,8 +36,6 @@ import (
 	"code.gitea.io/gitea/modules/setting"
 	api "code.gitea.io/gitea/modules/structs"
 	"code.gitea.io/gitea/modules/util"
-
-	"time" // DEBUG
 )
 
 func TestGitAnnex(t *testing.T) {
@@ -314,9 +312,6 @@ func TestGitAnnex(t *testing.T) {
 				_, stat_err := os.Stat(path.Join(setting.RepoRootPath, ctx.GitPath()))
 				require.True(t, os.IsNotExist(stat_err), "Remote annex repo should be removed from disk")
 			})
-
-			//fmt.Printf("Sleeping now. good luck.\n") // give time to allow manually inspecting the test server; the password for all users is 'password'!
-			time.Sleep(0 * time.Second) // DEBUG
 		})
 
 		t.Run("Private", func(t *testing.T) {
@@ -576,9 +571,6 @@ func TestGitAnnex(t *testing.T) {
 				_, stat_err := os.Stat(path.Join(setting.RepoRootPath, ctx.GitPath()))
 				require.True(t, os.IsNotExist(stat_err), "Remote annex repo should be removed from disk")
 			})
-
-			//fmt.Printf("Sleeping now. good luck.\n") // give time to allow manually inspecting the test server; the password for all users is 'password'!
-			time.Sleep(0 * time.Second) // DEBUG
 		})
 	})
 }
