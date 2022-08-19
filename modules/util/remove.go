@@ -5,12 +5,12 @@
 package util
 
 import (
+	"io/fs"
 	"os"
+	"path/filepath"
 	"runtime"
 	"syscall"
 	"time"
-	"io/fs"
-	"path/filepath"
 )
 
 const windowsSharingViolationError syscall.Errno = 32
