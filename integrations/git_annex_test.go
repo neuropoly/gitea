@@ -621,6 +621,8 @@ func doAnnexInitTest(remoteRepoPath string, repoPath string) (err error) {
 	if err != nil {
 		return err
 	}
+	// Note: this regex is unanchored because 'whereis' outputs multiple lines containing
+	//       headers and 1+ remotes and we just want to find one of them.
 	match = regexp.MustCompile(regexp.QuoteMeta(remoteAnnexUUID) + " -- .* \\[origin\\]\n").MatchString(annexWhereis)
 	if !match {
 		return errors.New("'git annex whereis' should report large.bin is known to be in [origin]")
