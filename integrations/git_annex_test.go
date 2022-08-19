@@ -2,17 +2,6 @@
 // Use of this source code is governed by a MIT-style
 // license that can be found in the LICENSE file.
 
-// I should test both:
-// - symlink annexing
-// - smudge annexing
-// - http annexing
-// - ssh annexing
-//
-// and then cross all that with testing different combinations of permissions
-// ..yeah? Is that a reasonable thing to do?
-
-// it would also be good, probably, to test how push-to-create interacts with git-annex
-
 package integrations
 
 import (
