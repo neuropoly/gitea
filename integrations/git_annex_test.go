@@ -897,8 +897,6 @@ func annexObjectPath(repoPath string, file string) (string, error) {
 
 /* like withKeyFile(), but automatically sets it the account given in ctx for use by git-annex */
 func withAnnexCtxKeyFile(t *testing.T, ctx APITestContext, callback func()) {
-	os.Setenv("GIT_ANNEX_USE_GIT_SSH", "1") // withKeyFile works by setting GIT_SSH_COMMAND, but git-annex only respects that if this is set
-
 	_gitAnnexUseGitSSH, gitAnnexUseGitSSHExists := os.LookupEnv("GIT_ANNEX_USE_GIT_SSH")
 	defer func() {
 		// reset
@@ -906,6 +904,8 @@ func withAnnexCtxKeyFile(t *testing.T, ctx APITestContext, callback func()) {
 			os.Setenv("GIT_ANNEX_USE_GIT_SSH", _gitAnnexUseGitSSH)
 		}
 	}()
+
+	os.Setenv("GIT_ANNEX_USE_GIT_SSH", "1") // withKeyFile works by setting GIT_SSH_COMMAND, but git-annex only respects that if this is set
 
 	withCtxKeyFile(t, ctx, callback)
 }
