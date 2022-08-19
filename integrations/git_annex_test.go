@@ -577,7 +577,8 @@ func TestGitAnnex(t *testing.T) {
 
 /* test that 'git annex init' works
 
-precondition: repoPath contains a pre-cloned git repo with a git-annex branch
+precondition: repoPath contains a pre-cloned git repo with an annex: a valid git-annex branch,
+              and a file 'large.bin' in its origin's annex. See doInitAnnexRepository().
 
 */
 func doAnnexInitTest(remoteRepoPath string, repoPath string) (err error) {
