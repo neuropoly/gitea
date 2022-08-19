@@ -23,12 +23,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"math/rand"
 	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -59,7 +57,6 @@ func TestGitAnnex(t *testing.T) {
 	// repo, you need to edit its .Reponame or just ignore it and write "username/reponame.git"
 
 	onGiteaRun(t, func(t *testing.T, u *url.URL) {
-		defer annexUnlockdown() // workaround https://git-annex.branchable.com/internals/lockdown/
 
 		t.Run("Public", func(t *testing.T) {
 			defer PrintCurrentTest(t)()
@@ -896,32 +893,6 @@ func annexObjectPath(repoPath string, file string) (string, error) {
 		repoPath = path.Join(repoPath, ".git")
 	}
 	return path.Join(repoPath, "annex", "objects", keyHashPrefix, annexKey, annexKey), nil
-}
-
-/*
-Do chmod -R +w $REPOS in order to handle https://git-annex.branchable.com/internals/lockdown/:
-
-> (The only bad consequence of this is that rm -rf .git doesn't work unless you first run chmod -R +w .git)
-
-Without, these tests can only be run once, because they reuse `gitea-repositories/`
-folder and will balk at finding pre-existing partial repos.
-*/
-func annexUnlockdown() {
-	filepath.WalkDir(setting.RepoRootPath, func(path string, d fs.DirEntry, err error) error {
-		if err == nil {
-			// 0200 == u+w, in octal unix permission notation
-			info, err := d.Info()
-			if err != nil {
-				return err
-			}
-
-			err = os.Chmod(path, info.Mode()|0200)
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	})
 }
 
 /* like withKeyFile(), but automatically sets it the account given in ctx for use by git-annex */
