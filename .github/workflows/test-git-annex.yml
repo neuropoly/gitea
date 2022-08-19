@@ -25,7 +25,7 @@ jobs:
 
       - name: Build ./gitea
         run: |
-          TAGS="bindata sqlite sqlite_unlock_notify" make build
+          TAGS="bindata sqlite sqlite_unlock_notify" make backend
 
       - name: Test
         run: |
