@@ -45,6 +45,7 @@ jobs:
       - name: Add hosts to /etc/hosts
         run: '[ -e "/.dockerenv" ] || [ -e "/run/.containerenv" ] || echo "127.0.0.1 pgsql ldap minio" | sudo tee -a /etc/hosts'
       - run: make deps-backend
+      - run: sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt install -y git-annex
       - run: make backend
         env:
           TAGS: bindata
@@ -67,6 +68,7 @@ jobs:
         with:
           go-version: ">=1.20.0"
       - run: make deps-backend
+      -  run: sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt install -y git-annex
       - run: make backend
         env:
           TAGS: bindata gogit sqlite sqlite_unlock_notify
@@ -176,6 +178,7 @@ jobs:
       - name: Add hosts to /etc/hosts
         run: '[ -e "/.dockerenv" ] || [ -e "/run/.containerenv" ] || echo "127.0.0.1 mysql elasticsearch smtpimap" | sudo tee -a /etc/hosts'
       - run: make deps-backend
+      - run: sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt install -y git-annex
       - run: make backend
         env:
           TAGS: bindata
@@ -207,6 +210,7 @@ jobs:
       - name: Add hosts to /etc/hosts
         run: '[ -e "/.dockerenv" ] || [ -e "/run/.containerenv" ] || echo "127.0.0.1 mysql8" | sudo tee -a /etc/hosts'
       - run: make deps-backend
+      - run: sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt install -y git-annex
       - run: make backend
         env:
           TAGS: bindata
@@ -237,6 +241,7 @@ jobs:
       - name: Add hosts to /etc/hosts
         run: '[ -e "/.dockerenv" ] || [ -e "/run/.containerenv" ] || echo "127.0.0.1 mssql" | sudo tee -a /etc/hosts'
       - run: make deps-backend
+      - run: sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt install -y git-annex
       - run: make backend
         env:
           TAGS: bindata
