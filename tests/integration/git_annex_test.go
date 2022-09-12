@@ -98,9 +98,8 @@ func TestGitAnnexPermissions(t *testing.T) {
 				t.Run("SSH", func(t *testing.T) {
 					defer tests.PrintCurrentTest(t)()
 
-					repoPath, err := os.MkdirTemp("", ownerCtx.Reponame)
-					require.NoError(t, err)
-					defer util.RemoveAll(repoPath)
+					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
+					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
 
 					withAnnexCtxKeyFile(t, ownerCtx, func() {
 						doGitClone(repoPath, repoURL)(t)
@@ -134,9 +133,8 @@ func TestGitAnnexPermissions(t *testing.T) {
 				t.Run("SSH", func(t *testing.T) {
 					defer tests.PrintCurrentTest(t)()
 
-					repoPath, err := os.MkdirTemp("", ownerCtx.Reponame)
-					require.NoError(t, err)
-					defer util.RemoveAll(repoPath)
+					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
+					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
 
 					withAnnexCtxKeyFile(t, ownerCtx, func() {
 						doGitClone(repoPath, repoURL)(t)
@@ -170,9 +168,8 @@ func TestGitAnnexPermissions(t *testing.T) {
 				t.Run("SSH", func(t *testing.T) {
 					defer tests.PrintCurrentTest(t)()
 
-					repoPath, err := os.MkdirTemp("", ownerCtx.Reponame)
-					require.NoError(t, err)
-					defer util.RemoveAll(repoPath)
+					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
+					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
 
 					withAnnexCtxKeyFile(t, ownerCtx, func() {
 						doGitClone(repoPath, repoURL)(t)
@@ -206,9 +203,8 @@ func TestGitAnnexPermissions(t *testing.T) {
 				t.Run("SSH", func(t *testing.T) {
 					defer tests.PrintCurrentTest(t)()
 
-					repoPath, err := os.MkdirTemp("", ownerCtx.Reponame)
-					require.NoError(t, err)
-					defer util.RemoveAll(repoPath)
+					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
+					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
 
 					withAnnexCtxKeyFile(t, ownerCtx, func() {
 						doGitClone(repoPath, repoURL)(t)
@@ -289,9 +285,8 @@ func TestGitAnnexPermissions(t *testing.T) {
 				t.Run("SSH", func(t *testing.T) {
 					defer tests.PrintCurrentTest(t)()
 
-					repoPath, err := os.MkdirTemp("", ownerCtx.Reponame)
-					require.NoError(t, err)
-					defer util.RemoveAll(repoPath)
+					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
+					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
 
 					withAnnexCtxKeyFile(t, ownerCtx, func() {
 						doGitClone(repoPath, repoURL)(t)
@@ -325,9 +320,8 @@ func TestGitAnnexPermissions(t *testing.T) {
 				t.Run("SSH", func(t *testing.T) {
 					defer tests.PrintCurrentTest(t)()
 
-					repoPath, err := os.MkdirTemp("", ownerCtx.Reponame)
-					require.NoError(t, err)
-					defer util.RemoveAll(repoPath)
+					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
+					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
 
 					withAnnexCtxKeyFile(t, ownerCtx, func() {
 						doGitClone(repoPath, repoURL)(t)
@@ -361,9 +355,8 @@ func TestGitAnnexPermissions(t *testing.T) {
 				t.Run("SSH", func(t *testing.T) {
 					defer tests.PrintCurrentTest(t)()
 
-					repoPath, err := os.MkdirTemp("", ownerCtx.Reponame)
-					require.NoError(t, err)
-					defer util.RemoveAll(repoPath)
+					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
+					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
 
 					withAnnexCtxKeyFile(t, ownerCtx, func() {
 						doGitClone(repoPath, repoURL)(t)
@@ -397,9 +390,8 @@ func TestGitAnnexPermissions(t *testing.T) {
 				t.Run("SSH", func(t *testing.T) {
 					defer tests.PrintCurrentTest(t)()
 
-					repoPath, err := os.MkdirTemp("", ownerCtx.Reponame)
-					require.NoError(t, err)
-					defer util.RemoveAll(repoPath)
+					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
+					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
 
 					withAnnexCtxKeyFile(t, ownerCtx, func() {
 						doGitClone(repoPath, repoURL)(t)
@@ -697,17 +689,17 @@ TODO: This has to take a testing.T, but only because it reuses a routine
       It would be cleaner if it didn't have to.
 */
 func doInitRemoteAnnexRepository(t *testing.T, repoURL *url.URL) error {
-	repoPath, err := os.MkdirTemp("", path.Base(repoURL.Path))
-	if err != nil {
-		return err
-	}
+	repoPath := path.Join(t.TempDir(), path.Base(repoURL.Path))
 	// This clone is immediately thrown away, which
 	// helps force the tests to be end-to-end.
 	defer util.RemoveAll(repoPath)
 
 	doGitClone(repoPath, repoURL)(t)
 
-	err = doInitAnnexRepository(repoPath)
+	err := doInitAnnexRepository(repoPath)
+	if err != nil {
+		return err
+	}
 
 	_, _, err = git.NewCommand(git.DefaultContext, "annex", "sync", "--content").RunStdString(&git.RunOpts{Dir: repoPath})
 	if err != nil {
