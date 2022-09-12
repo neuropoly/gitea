@@ -439,7 +439,7 @@ precondition: repoPath contains a pre-cloned git repo with an annex: a valid git
 func doAnnexInitTest(remoteRepoPath string, repoPath string) (err error) {
 	_, _, err = git.NewCommand(git.DefaultContext, "annex", "init").RunStdString(&git.RunOpts{Dir: repoPath})
 	if err != nil {
-		return err
+		return fmt.Errorf("Couldn't `git annex init`: %w", err)
 	}
 
 	// - method 0: 'git config remote.origin.annex-uuid'.
@@ -447,7 +447,7 @@ func doAnnexInitTest(remoteRepoPath string, repoPath string) (err error) {
 	//   the remote git-annex and was able to learn its ID number.
 	readAnnexUUID, _, err := git.NewCommand(git.DefaultContext, "config", "remote.origin.annex-uuid").RunStdString(&git.RunOpts{Dir: repoPath})
 	if err != nil {
-		return err
+		return fmt.Errorf("Couldn't read remote `git config remote.origin.annex-uuid`: %w", err)
 	}
 	readAnnexUUID = strings.TrimSpace(readAnnexUUID)
 
@@ -458,7 +458,7 @@ func doAnnexInitTest(remoteRepoPath string, repoPath string) (err error) {
 
 	remoteAnnexUUID, _, err := git.NewCommand(git.DefaultContext, "config", "annex.uuid").RunStdString(&git.RunOpts{Dir: remoteRepoPath})
 	if err != nil {
-		return err
+		return fmt.Errorf("Couldn't read local `git config annex.uuid`: %w", err)
 	}
 
 	remoteAnnexUUID = strings.TrimSpace(remoteAnnexUUID)
@@ -475,7 +475,7 @@ func doAnnexInitTest(remoteRepoPath string, repoPath string) (err error) {
 	//   Demonstrates that git-annex understands the annexed file can be found in the remote annex.
 	annexWhereis, _, err := git.NewCommand(git.DefaultContext, "annex", "whereis", "large.bin").RunStdString(&git.RunOpts{Dir: repoPath})
 	if err != nil {
-		return err
+		return fmt.Errorf("Couldn't `git annex whereis large.bin`: %w", err)
 	}
 	// Note: this regex is unanchored because 'whereis' outputs multiple lines containing
 	//       headers and 1+ remotes and we just want to find one of them.
