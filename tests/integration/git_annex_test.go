@@ -32,6 +32,22 @@ import (
 //   which is assumed to be owned by that username; if you want to target a different
 //   repo, you need to edit its .Reponame or just ignore it and write "username/reponame.git"
 
+func doCreateRemoteAnnexRepository(t *testing.T, u *url.URL, ctx APITestContext, private bool) (err error) {
+	doAPICreateRepository(ctx, false)(t)
+	doAPIEditRepository(ctx, &api.EditRepoOption{Private: &private})(t)
+
+	repoURL := createSSHUrl(ctx.GitPath(), u)
+
+	// Fill in fixture data
+	withAnnexCtxKeyFile(t, ctx, func() {
+		err = doInitRemoteAnnexRepository(t, repoURL)
+	})
+	if err != nil {
+		return fmt.Errorf("Unable to initialize remote repo with git-annex fixture: %w", err)
+	}
+	return nil
+}
+
 /*
  Test that permissions are enforced on git-annex-shell commands.
 
@@ -60,9 +76,7 @@ func TestGitAnnexPermissions(t *testing.T) {
 
 			// create a public repo
 			ownerCtx := NewAPITestContext(t, "user2", "annex-public")
-			doAPICreateRepository(ownerCtx, false)(t)
-			private := false // this API takes pointers, so we need a variable
-			doAPIEditRepository(ownerCtx, &api.EditRepoOption{Private: &private})(t)
+			require.NoError(t, doCreateRemoteAnnexRepository(t, u, ownerCtx, false))
 
 			// double-check it's public
 			repo, err := repo_model.GetRepositoryByOwnerAndName(ownerCtx.Username, ownerCtx.Reponame)
@@ -72,12 +86,6 @@ func TestGitAnnexPermissions(t *testing.T) {
 			// Remote addresses of the repo
 			repoURL := createSSHUrl(ownerCtx.GitPath(), u)                        // remote git URL
 			remoteRepoPath := path.Join(setting.RepoRootPath, ownerCtx.GitPath()) // path on disk -- which can be examined directly because we're testing from localhost
-
-			// Fill in fixture data
-			withAnnexCtxKeyFile(t, ownerCtx, func() {
-				err = doInitRemoteAnnexRepository(t, repoURL)
-				require.NoError(t, err, "git-annex repository should have been initialized")
-			})
 
 			// Different sessions, so we can test different permissions.
 			// We leave Reponame blank because we don't actually then later add it according to each case if needed
@@ -247,7 +255,7 @@ func TestGitAnnexPermissions(t *testing.T) {
 
 			// create a private repo
 			ownerCtx := NewAPITestContext(t, "user2", "annex-private")
-			doAPICreateRepository(ownerCtx, false)(t)
+			require.NoError(t, doCreateRemoteAnnexRepository(t, u, ownerCtx, true))
 
 			// double-check it's private
 			repo, err := repo_model.GetRepositoryByOwnerAndName(ownerCtx.Username, ownerCtx.Reponame)
@@ -257,12 +265,6 @@ func TestGitAnnexPermissions(t *testing.T) {
 			// Remote addresses of the repo
 			repoURL := createSSHUrl(ownerCtx.GitPath(), u)                        // remote git URL
 			remoteRepoPath := path.Join(setting.RepoRootPath, ownerCtx.GitPath()) // path on disk -- which can be examined directly because we're testing from localhost
-
-			// Fill in fixture data
-			withAnnexCtxKeyFile(t, ownerCtx, func() {
-				err = doInitRemoteAnnexRepository(t, repoURL)
-				require.NoError(t, err, "git-annex repository should have been initialized")
-			})
 
 			// Different sessions, so we can test different permissions.
 			// We leave Reponame blank because we don't actually then later add it according to each case if needed
