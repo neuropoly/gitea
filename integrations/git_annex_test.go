@@ -711,56 +711,30 @@ func doInitRemoteAnnexRepository(t *testing.T, repoURL *url.URL) error {
 }
 
 /* given a git repo and a path to an annexed file in it (assumed to be committed to its HEAD),
-   find the path in .git/annex/objects/ that contains its actual contents. */
+   find the path in .git/annex/objects/ that contains its actual contents.
+
+  TODO: pass a parameter to allow examining non-HEAD branches
+ */
 func annexObjectPath(repoPath string, file string) (string, error) {
-
-	// find the path inside *.git/annex/objects of a given file
-	// i.e. figure out its two-level hash prefix: https://git-annex.branchable.com/internals/hashing/
-	// ASSUMES the target file is checked into HEAD
-
-	var bare bool // whether the repo is bare or not; this changes what the hashing algorithm is, due to backwards compatibility
-
-	bareStr, _, err := git.NewCommand(git.DefaultContext, "config", "core.bare").RunStdString(&git.RunOpts{Dir: repoPath})
+	// NB: `git annex lookupkey` is more reliable, but doesn't work in bare repos.
+	annexKey, _, err := git.NewCommandNoGlobals("show", "HEAD:"+file).RunStdString(&git.RunOpts{Dir: repoPath})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("in %s: %w", repoPath, err) // the error from git prints the filename but not repo
 	}
 
-	if bareStr == "true\n" {
-		bare = true
-	} else if bareStr == "false\n" {
-		bare = false
-	} else {
-		return "", errors.New(fmt.Sprintf("Could not determine if %s is a bare repo or not; git config core.bare = <%s>", repoPath, bareStr))
-	}
+	// There are two formats an annexed file pointer might be:
+	// * a symlink to .git/annex/objects/$HASHDIR/$ANNEX_KEY/$ANNEX_KEY - used by files created with 'git annex add'
+	// * a text file containing /annex/objects/$ANNEX_KEY - used by files for which 'git add' was configured to run git-annex-smudge
+	// This recovers $ANNEX_KEY from either case:
+	annexKey = path.Base(strings.TrimSpace(annexKey))
 
-	// given a repo and a file in it
-	// TODO: handle other branches, e.g. non-HEAD branches etc
-	annexKey, _, err := git.NewCommand(git.DefaultContext, "show", "HEAD:"+file).RunStdString(&git.RunOpts{Dir: repoPath})
+	contentPath, _, err := git.NewCommandNoGlobals("annex", "contentlocation", annexKey).RunStdString(&git.RunOpts{Dir: repoPath})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("in %s: %s does not seem to be annexed: %w", repoPath, file, err)
 	}
+	contentPath = strings.TrimSpace(contentPath)
 
-	annexKey = strings.TrimSpace(annexKey)
-	if !strings.HasPrefix(annexKey, "/annex/objects/") {
-		return "", errors.New(fmt.Sprintf("%s/%s does not appear to be annexed .", repoPath, file))
-	}
-	annexKey = strings.TrimPrefix(annexKey, "/annex/objects/")
-
-	var keyformat string
-	if bare {
-		keyformat = "hashdirlower"
-	} else {
-		keyformat = "hashdirmixed"
-	}
-	keyHashPrefix, _, err := git.NewCommand(git.DefaultContext, "annex", "examinekey", "--format=${"+keyformat+"}", annexKey).RunStdString(&git.RunOpts{Dir: repoPath})
-	if err != nil {
-		return "", err
-	}
-
-	if !bare {
-		repoPath = path.Join(repoPath, ".git")
-	}
-	return path.Join(repoPath, "annex", "objects", keyHashPrefix, annexKey, annexKey), nil
+	return path.Join(repoPath, contentPath), nil
 }
 
 /* like withKeyFile(), but automatically sets it the account given in ctx for use by git-annex */
