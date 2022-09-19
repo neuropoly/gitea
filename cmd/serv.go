@@ -183,8 +183,7 @@ func runServ(c *cli.Context) error {
 	verb := words[0]
 	repoPath := words[1]
 	if verb == gitAnnexShellVerb {
-		//if !setting.Annex.Enabled { // TODO: https://github.com/neuropoly/gitea/issues/8
-		if false {
+		if !setting.Annex.Enabled {
 			return fail("Unknown git command", "git-annex request over SSH denied, git-annex support is disabled")
 		}
 
