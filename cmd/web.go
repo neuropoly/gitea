@@ -242,6 +242,10 @@ func listen(m http.Handler, handleRedirector bool) error {
 		log.Info("LFS server enabled")
 	}
 
+	if setting.Annex.Enabled {
+		log.Info("git-annex enabled")
+	}
+
 	var err error
 	switch setting.Protocol {
 	case setting.HTTP:
