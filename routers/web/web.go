@@ -282,6 +282,13 @@ func RegisterRoutes(m *web.Route) {
 		}
 	}
 
+	annexEnabled := func(ctx *context.Context) {
+		if !setting.Annex.Enabled {
+			ctx.Error(http.StatusNotFound)
+			return
+		}
+	}
+
 	federationEnabled := func(ctx *context.Context) {
 		if !setting.Federation.Enabled {
 			ctx.Error(http.StatusNotFound)
@@ -1251,11 +1258,16 @@ func RegisterRoutes(m *web.Route) {
 			}, ignSignInAndCsrf, lfsServerEnabled)
 
 			m.Group("", func() {
+				// for git-annex
+				m.GetOptions("/config", repo.GetTextFile("config"))  // needed by clients reading annex.uuid during `git annex initremote`
+				m.GetOptions("/annex/objects/{hash1}/{hash2}/{keyDir}/{key}", repo.GetAnnexObject)
+			}, ignSignInAndCsrf, annexEnabled, context_service.UserAssignmentWeb())
+
+			m.Group("", func() {
 				m.PostOptions("/git-upload-pack", repo.ServiceUploadPack)
 				m.PostOptions("/git-receive-pack", repo.ServiceReceivePack)
 				m.GetOptions("/info/refs", repo.GetInfoRefs)
 				m.GetOptions("/HEAD", repo.GetTextFile("HEAD"))
-				m.GetOptions("/config", repo.GetTextFile("config"))  // needed by git-annex's dumb http mode
 				m.GetOptions("/objects/info/alternates", repo.GetTextFile("objects/info/alternates"))
 				m.GetOptions("/objects/info/http-alternates", repo.GetTextFile("objects/info/http-alternates"))
 				m.GetOptions("/objects/info/packs", repo.GetInfoPacks)
@@ -1263,7 +1275,6 @@ func RegisterRoutes(m *web.Route) {
 				m.GetOptions("/objects/{head:[0-9a-f]{2}}/{hash:[0-9a-f]{38}}", repo.GetLooseObject)
 				m.GetOptions("/objects/pack/pack-{file:[0-9a-f]{40}}.pack", repo.GetPackFile)
 				m.GetOptions("/objects/pack/pack-{file:[0-9a-f]{40}}.idx", repo.GetIdxFile)
-				m.GetOptions("/annex/objects/{hash1}/{hash2}/{keyDir}/{key}", repo.GetAnnexObject) // for git-annex
 			}, ignSignInAndCsrf, context_service.UserAssignmentWeb())
 		})
 	})
