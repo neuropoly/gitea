@@ -8,7 +8,7 @@ import (
 	"code.gitea.io/gitea/modules/log"
 )
 
-// LFS represents the configuration for Git LFS
+// Annex represents the configuration for git-annex
 var Annex = struct {
 	Enabled     bool          `ini:"ENABLED"`
 }{}
