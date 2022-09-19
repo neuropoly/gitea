@@ -1087,6 +1087,7 @@ func loadFromConf(allowEmpty bool, extraConfig string) {
 	API.SwaggerURL = u.String()
 
 	newGit()
+	newAnnex()
 
 	newMirror()
 
