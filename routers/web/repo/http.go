@@ -628,11 +628,19 @@ func GetAnnexObject(ctx *context.Context) {
 		// ref: https://git-annex.branchable.com/internals/hashing/
 
 		// keyDir should = key, but we don't enforce that
-		object := ctx.Params("hash1") + "/" + ctx.Params("hash2") + "/" + ctx.Params("keyDir") + "/" + ctx.Params("key")
+		object := path.Join(ctx.Params("hash1"), ctx.Params("hash2"), ctx.Params("keyDir"), ctx.Params("key"))
 
-		// use path.Clean() to sanitize the input but otherwise trust it
-		// the router code disallows, so this should be redundant, but it's harmless extra safety even if it is.
-		object = path.Clean("/" + object)[1:] // path.Clean() removes all directory traversals *if* given an absolute path to begin with, so make object an absolute path and then a relative path again
+		// Sanitize the input against directory traversals.
+		//
+		// This works because, if a path starts rooted,
+		// path.Clean() will remove all excess '..'. So
+		// this pretends the path is rooted ("/"), then
+		// path.Join() calls path.Clean() internally,
+		// then this unroots the path it ([1:]) (and 
+		//
+		// The router code also disallows "..", so this should be)
+		// redundant, but it's defensive to have it here.
+		object = path.Join("/", object)[1:]
 
 		h.setHeaderCacheForever()
 		h.sendFile("application/octet-stream", "annex/objects/"+object)
