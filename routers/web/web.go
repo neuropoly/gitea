@@ -280,6 +280,13 @@ func RegisterRoutes(m *web.Route) {
 		}
 	}
 
+	annexEnabled := func(ctx *context.Context) {
+		if !setting.Annex.Enabled {
+			ctx.Error(http.StatusNotFound)
+			return
+		}
+	}
+
 	federationEnabled := func(ctx *context.Context) {
 		if !setting.Federation.Enabled {
 			ctx.Error(http.StatusNotFound)
@@ -1475,6 +1482,12 @@ func RegisterRoutes(m *web.Route) {
 					ctx.NotFound("", nil)
 				})
 			}, ignSignInAndCsrf, lfsServerEnabled)
+
+			m.Group("", func() {
+				// for git-annex
+				m.GetOptions("/config", repo.GetTextFile("config")) // needed by clients reading annex.uuid during `git annex initremote`
+				m.GetOptions("/annex/objects/{hash1}/{hash2}/{keyDir}/{key}", repo.GetAnnexObject)
+			}, ignSignInAndCsrf, annexEnabled, context_service.UserAssignmentWeb())
 
 			m.Group("", func() {
 				m.PostOptions("/git-upload-pack", repo.ServiceUploadPack)
