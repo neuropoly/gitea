@@ -318,12 +318,13 @@ func (c *Command) RunStdBytes(opts *RunOpts) (stdout, stderr []byte, runErr RunS
 }
 
 // AllowLFSFiltersArgs return globalCommandArgs with lfs filter, it should only be used for tests
+// It also re-enables git-credential(1), which is used to test git-annex's HTTP support
 func AllowLFSFiltersArgs() []string {
 	// Now here we should explicitly allow lfs filters to run
 	filteredLFSGlobalArgs := make([]string, len(globalCommandArgs))
 	j := 0
 	for _, arg := range globalCommandArgs {
-		if strings.Contains(arg, "lfs") {
+		if strings.Contains(arg, "lfs") || strings.Contains(arg, "credential") {
 			j--
 		} else {
 			filteredLFSGlobalArgs[j] = arg
