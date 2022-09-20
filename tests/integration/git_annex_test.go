@@ -51,7 +51,8 @@ func doCreateRemoteAnnexRepository(t *testing.T, u *url.URL, ctx APITestContext,
 /*
  Test that permissions are enforced on git-annex-shell commands.
 
- Along the way, test that uploading, downloading, and deleting all work.
+ Along the way, this also tests that uploading, downloading, and deleting all work,
+ so we haven't written separate tests for those.
 */
 func TestGitAnnexPermissions(t *testing.T) {
 	if !setting.Annex.Enabled {
@@ -68,6 +69,16 @@ func TestGitAnnexPermissions(t *testing.T) {
 
 	onGiteaRun(t, func(t *testing.T, u *url.URL) {
 
+		// Tell git-annex to allow http://127.0.0.1, http://localhost and http://::1. Without
+		// this, all `git annex` commands will silently fail when run against http:// remotes
+		// without explaining what's wrong.
+		//
+		// Note: onGiteaRun() sets up an alternate HOME so this actually edits
+		//       tests/integration/gitea-integration-*/data/home/.gitconfig and
+		//       if you're debugging you need to remember to match that.
+		_, _, err := git.NewCommandNoGlobals("config", "--global", "annex.security.allowed-ip-addresses", "all").RunStdString(&git.RunOpts{})
+		require.NoError(t, err)
+
 		t.Run("Public", func(t *testing.T) {
 			defer tests.PrintCurrentTest(t)()
 
@@ -81,8 +92,6 @@ func TestGitAnnexPermissions(t *testing.T) {
 			require.NoError(t, err)
 			require.False(t, repo.IsPrivate)
 
-			// Remote addresses of the repo
-			repoURL := createSSHUrl(ownerCtx.GitPath(), u)                        // remote git URL
 			remoteRepoPath := path.Join(setting.RepoRootPath, ownerCtx.GitPath()) // path on disk -- which can be examined directly because we're testing from localhost
 
 			// Different sessions, so we can test different permissions.
@@ -103,6 +112,8 @@ func TestGitAnnexPermissions(t *testing.T) {
 
 				t.Run("SSH", func(t *testing.T) {
 					defer tests.PrintCurrentTest(t)()
+
+					repoURL := createSSHUrl(ownerCtx.GitPath(), u)
 
 					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
 					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
@@ -131,6 +142,31 @@ func TestGitAnnexPermissions(t *testing.T) {
 						})
 					})
 				})
+
+				t.Run("HTTP", func(t *testing.T) {
+					defer tests.PrintCurrentTest(t)()
+
+					repoURL := createHTTPUrl(ownerCtx.GitPath(), u)
+
+					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
+					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
+
+					withAnnexCtxHTTPPassword(t, u, ownerCtx, func() {
+						doGitClone(repoPath, repoURL)(t)
+					})
+
+					withAnnexCtxHTTPPassword(t, u, ownerCtx, func() {
+						t.Run("Init", func(t *testing.T) {
+							defer tests.PrintCurrentTest(t)()
+							require.NoError(t, doAnnexInitTest(remoteRepoPath, repoPath))
+						})
+
+						t.Run("Download", func(t *testing.T) {
+							defer tests.PrintCurrentTest(t)()
+							require.NoError(t, doAnnexDownloadTest(remoteRepoPath, repoPath))
+						})
+					})
+				})
 			})
 
 			t.Run("Writer", func(t *testing.T) {
@@ -138,6 +174,8 @@ func TestGitAnnexPermissions(t *testing.T) {
 
 				t.Run("SSH", func(t *testing.T) {
 					defer tests.PrintCurrentTest(t)()
+
+					repoURL := createSSHUrl(ownerCtx.GitPath(), u)
 
 					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
 					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
@@ -166,6 +204,31 @@ func TestGitAnnexPermissions(t *testing.T) {
 						})
 					})
 				})
+
+				t.Run("HTTP", func(t *testing.T) {
+					defer tests.PrintCurrentTest(t)()
+
+					repoURL := createHTTPUrl(ownerCtx.GitPath(), u)
+
+					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
+					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
+
+					withAnnexCtxHTTPPassword(t, u, ownerCtx, func() {
+						doGitClone(repoPath, repoURL)(t)
+					})
+
+					withAnnexCtxHTTPPassword(t, u, writerCtx, func() {
+						t.Run("Init", func(t *testing.T) {
+							defer tests.PrintCurrentTest(t)()
+							require.NoError(t, doAnnexInitTest(remoteRepoPath, repoPath))
+						})
+
+						t.Run("Download", func(t *testing.T) {
+							defer tests.PrintCurrentTest(t)()
+							require.NoError(t, doAnnexDownloadTest(remoteRepoPath, repoPath))
+						})
+					})
+				})
 			})
 
 			t.Run("Reader", func(t *testing.T) {
@@ -173,6 +236,8 @@ func TestGitAnnexPermissions(t *testing.T) {
 
 				t.Run("SSH", func(t *testing.T) {
 					defer tests.PrintCurrentTest(t)()
+
+					repoURL := createSSHUrl(ownerCtx.GitPath(), u)
 
 					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
 					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
@@ -201,6 +266,31 @@ func TestGitAnnexPermissions(t *testing.T) {
 						})
 					})
 				})
+
+				t.Run("HTTP", func(t *testing.T) {
+					defer tests.PrintCurrentTest(t)()
+
+					repoURL := createHTTPUrl(ownerCtx.GitPath(), u)
+
+					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
+					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
+
+					withAnnexCtxHTTPPassword(t, u, ownerCtx, func() {
+						doGitClone(repoPath, repoURL)(t)
+					})
+
+					withAnnexCtxHTTPPassword(t, u, readerCtx, func() {
+						t.Run("Init", func(t *testing.T) {
+							defer tests.PrintCurrentTest(t)()
+							require.NoError(t, doAnnexInitTest(remoteRepoPath, repoPath))
+						})
+
+						t.Run("Download", func(t *testing.T) {
+							defer tests.PrintCurrentTest(t)()
+							require.NoError(t, doAnnexDownloadTest(remoteRepoPath, repoPath))
+						})
+					})
+				})
 			})
 
 			t.Run("Outsider", func(t *testing.T) {
@@ -208,6 +298,8 @@ func TestGitAnnexPermissions(t *testing.T) {
 
 				t.Run("SSH", func(t *testing.T) {
 					defer tests.PrintCurrentTest(t)()
+
+					repoURL := createSSHUrl(ownerCtx.GitPath(), u)
 
 					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
 					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
@@ -236,6 +328,61 @@ func TestGitAnnexPermissions(t *testing.T) {
 						})
 					})
 				})
+
+				t.Run("HTTP", func(t *testing.T) {
+					defer tests.PrintCurrentTest(t)()
+
+					repoURL := createHTTPUrl(ownerCtx.GitPath(), u)
+
+					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
+					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
+
+					withAnnexCtxHTTPPassword(t, u, ownerCtx, func() {
+						doGitClone(repoPath, repoURL)(t)
+					})
+
+					withAnnexCtxHTTPPassword(t, u, outsiderCtx, func() {
+						t.Run("Init", func(t *testing.T) {
+							defer tests.PrintCurrentTest(t)()
+							require.NoError(t, doAnnexInitTest(remoteRepoPath, repoPath))
+						})
+
+						t.Run("Download", func(t *testing.T) {
+							defer tests.PrintCurrentTest(t)()
+							require.NoError(t, doAnnexDownloadTest(remoteRepoPath, repoPath))
+						})
+					})
+				})
+			})
+
+			t.Run("Anonymous", func(t *testing.T) {
+				defer tests.PrintCurrentTest(t)()
+
+				// Only HTTP has an anonymous mode
+				t.Run("HTTP", func(t *testing.T) {
+					defer tests.PrintCurrentTest(t)()
+
+					repoURL := createHTTPUrl(ownerCtx.GitPath(), u)
+
+					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
+					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
+
+					withAnnexCtxHTTPPassword(t, u, ownerCtx, func() {
+						doGitClone(repoPath, repoURL)(t)
+					})
+
+					// unlike the other tests, at this step we *do not* define credentials:
+
+					t.Run("Init", func(t *testing.T) {
+						defer tests.PrintCurrentTest(t)()
+						require.NoError(t, doAnnexInitTest(remoteRepoPath, repoPath))
+					})
+
+					t.Run("Download", func(t *testing.T) {
+						defer tests.PrintCurrentTest(t)()
+						require.NoError(t, doAnnexDownloadTest(remoteRepoPath, repoPath))
+					})
+				})
 			})
 
 			t.Run("Delete", func(t *testing.T) {
@@ -261,8 +408,6 @@ func TestGitAnnexPermissions(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, repo.IsPrivate)
 
-			// Remote addresses of the repo
-			repoURL := createSSHUrl(ownerCtx.GitPath(), u)                        // remote git URL
 			remoteRepoPath := path.Join(setting.RepoRootPath, ownerCtx.GitPath()) // path on disk -- which can be examined directly because we're testing from localhost
 
 			// Different sessions, so we can test different permissions.
@@ -285,6 +430,8 @@ func TestGitAnnexPermissions(t *testing.T) {
 
 				t.Run("SSH", func(t *testing.T) {
 					defer tests.PrintCurrentTest(t)()
+
+					repoURL := createSSHUrl(ownerCtx.GitPath(), u)
 
 					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
 					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
@@ -313,6 +460,31 @@ func TestGitAnnexPermissions(t *testing.T) {
 						})
 					})
 				})
+
+				t.Run("HTTP", func(t *testing.T) {
+					defer tests.PrintCurrentTest(t)()
+
+					repoURL := createHTTPUrl(ownerCtx.GitPath(), u)
+
+					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
+					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
+
+					withAnnexCtxHTTPPassword(t, u, ownerCtx, func() {
+						doGitClone(repoPath, repoURL)(t)
+					})
+
+					withAnnexCtxHTTPPassword(t, u, ownerCtx, func() {
+						t.Run("Init", func(t *testing.T) {
+							defer tests.PrintCurrentTest(t)()
+							require.NoError(t, doAnnexInitTest(remoteRepoPath, repoPath))
+						})
+
+						t.Run("Download", func(t *testing.T) {
+							defer tests.PrintCurrentTest(t)()
+							require.NoError(t, doAnnexDownloadTest(remoteRepoPath, repoPath))
+						})
+					})
+				})
 			})
 
 			t.Run("Writer", func(t *testing.T) {
@@ -320,6 +492,8 @@ func TestGitAnnexPermissions(t *testing.T) {
 
 				t.Run("SSH", func(t *testing.T) {
 					defer tests.PrintCurrentTest(t)()
+
+					repoURL := createSSHUrl(ownerCtx.GitPath(), u)
 
 					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
 					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
@@ -348,6 +522,31 @@ func TestGitAnnexPermissions(t *testing.T) {
 						})
 					})
 				})
+
+				t.Run("HTTP", func(t *testing.T) {
+					defer tests.PrintCurrentTest(t)()
+
+					repoURL := createHTTPUrl(ownerCtx.GitPath(), u)
+
+					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
+					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
+
+					withAnnexCtxHTTPPassword(t, u, ownerCtx, func() {
+						doGitClone(repoPath, repoURL)(t)
+					})
+
+					withAnnexCtxHTTPPassword(t, u, writerCtx, func() {
+						t.Run("Init", func(t *testing.T) {
+							defer tests.PrintCurrentTest(t)()
+							require.NoError(t, doAnnexInitTest(remoteRepoPath, repoPath))
+						})
+
+						t.Run("Download", func(t *testing.T) {
+							defer tests.PrintCurrentTest(t)()
+							require.NoError(t, doAnnexDownloadTest(remoteRepoPath, repoPath))
+						})
+					})
+				})
 			})
 
 			t.Run("Reader", func(t *testing.T) {
@@ -355,6 +554,8 @@ func TestGitAnnexPermissions(t *testing.T) {
 
 				t.Run("SSH", func(t *testing.T) {
 					defer tests.PrintCurrentTest(t)()
+
+					repoURL := createSSHUrl(ownerCtx.GitPath(), u)
 
 					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
 					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
@@ -383,6 +584,31 @@ func TestGitAnnexPermissions(t *testing.T) {
 						})
 					})
 				})
+
+				t.Run("HTTP", func(t *testing.T) {
+					defer tests.PrintCurrentTest(t)()
+
+					repoURL := createHTTPUrl(ownerCtx.GitPath(), u)
+
+					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
+					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
+
+					withAnnexCtxHTTPPassword(t, u, ownerCtx, func() {
+						doGitClone(repoPath, repoURL)(t)
+					})
+
+					withAnnexCtxHTTPPassword(t, u, readerCtx, func() {
+						t.Run("Init", func(t *testing.T) {
+							defer tests.PrintCurrentTest(t)()
+							require.NoError(t, doAnnexInitTest(remoteRepoPath, repoPath))
+						})
+
+						t.Run("Download", func(t *testing.T) {
+							defer tests.PrintCurrentTest(t)()
+							require.NoError(t, doAnnexDownloadTest(remoteRepoPath, repoPath))
+						})
+					})
+				})
 			})
 
 			t.Run("Outsider", func(t *testing.T) {
@@ -390,6 +616,8 @@ func TestGitAnnexPermissions(t *testing.T) {
 
 				t.Run("SSH", func(t *testing.T) {
 					defer tests.PrintCurrentTest(t)()
+
+					repoURL := createSSHUrl(ownerCtx.GitPath(), u)
 
 					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
 					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
@@ -418,6 +646,61 @@ func TestGitAnnexPermissions(t *testing.T) {
 						})
 					})
 				})
+
+				t.Run("HTTP", func(t *testing.T) {
+					defer tests.PrintCurrentTest(t)()
+
+					repoURL := createHTTPUrl(ownerCtx.GitPath(), u)
+
+					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
+					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
+
+					withAnnexCtxHTTPPassword(t, u, ownerCtx, func() {
+						doGitClone(repoPath, repoURL)(t)
+					})
+
+					withAnnexCtxHTTPPassword(t, u, outsiderCtx, func() {
+						t.Run("Init", func(t *testing.T) {
+							defer tests.PrintCurrentTest(t)()
+							require.Error(t, doAnnexInitTest(remoteRepoPath, repoPath))
+						})
+
+						t.Run("Download", func(t *testing.T) {
+							defer tests.PrintCurrentTest(t)()
+							require.Error(t, doAnnexDownloadTest(remoteRepoPath, repoPath))
+						})
+					})
+				})
+			})
+
+			t.Run("Anonymous", func(t *testing.T) {
+				defer tests.PrintCurrentTest(t)()
+
+				// Only HTTP has an anonymous mode
+				t.Run("HTTP", func(t *testing.T) {
+					defer tests.PrintCurrentTest(t)()
+
+					repoURL := createHTTPUrl(ownerCtx.GitPath(), u)
+
+					repoPath := path.Join(t.TempDir(), ownerCtx.Reponame)
+					defer util.RemoveAll(repoPath) // cleans out git-annex lockdown permissions
+
+					withAnnexCtxHTTPPassword(t, u, ownerCtx, func() {
+						doGitClone(repoPath, repoURL)(t)
+					})
+
+					// unlike the other tests, at this step we *do not* define credentials:
+
+					t.Run("Init", func(t *testing.T) {
+						defer tests.PrintCurrentTest(t)()
+						require.Error(t, doAnnexInitTest(remoteRepoPath, repoPath))
+					})
+
+					t.Run("Download", func(t *testing.T) {
+						defer tests.PrintCurrentTest(t)()
+						require.Error(t, doAnnexDownloadTest(remoteRepoPath, repoPath))
+					})
+				})
 			})
 
 			t.Run("Delete", func(t *testing.T) {
@@ -439,7 +722,7 @@ precondition: repoPath contains a pre-cloned git repo with an annex: a valid git
 
 */
 func doAnnexInitTest(remoteRepoPath string, repoPath string) (err error) {
-	_, _, err = git.NewCommand(git.DefaultContext, "annex", "init", "cloned-repo").RunStdString(&git.RunOpts{Dir: repoPath})
+	_, _, err = git.NewCommandNoGlobals("annex", "init", "cloned-repo").RunStdString(&git.RunOpts{Dir: repoPath})
 	if err != nil {
 		return fmt.Errorf("Couldn't `git annex init`: %w", err)
 	}
@@ -447,7 +730,7 @@ func doAnnexInitTest(remoteRepoPath string, repoPath string) (err error) {
 	// - method 0: 'git config remote.origin.annex-uuid'.
 	//   Demonstrates that 'git annex init' successfully contacted
 	//   the remote git-annex and was able to learn its ID number.
-	readAnnexUUID, _, err := git.NewCommand(git.DefaultContext, "config", "remote.origin.annex-uuid").RunStdString(&git.RunOpts{Dir: repoPath})
+	readAnnexUUID, _, err := git.NewCommandNoGlobals("config", "remote.origin.annex-uuid").RunStdString(&git.RunOpts{Dir: repoPath})
 	if err != nil {
 		return fmt.Errorf("Couldn't read remote `git config remote.origin.annex-uuid`: %w", err)
 	}
@@ -458,7 +741,7 @@ func doAnnexInitTest(remoteRepoPath string, repoPath string) (err error) {
 		return errors.New(fmt.Sprintf("'git config remote.origin.annex-uuid' should have been able to download the remote's uuid; but instead read '%s'.", readAnnexUUID))
 	}
 
-	remoteAnnexUUID, _, err := git.NewCommand(git.DefaultContext, "config", "annex.uuid").RunStdString(&git.RunOpts{Dir: remoteRepoPath})
+	remoteAnnexUUID, _, err := git.NewCommandNoGlobals("config", "annex.uuid").RunStdString(&git.RunOpts{Dir: remoteRepoPath})
 	if err != nil {
 		return fmt.Errorf("Couldn't read local `git config annex.uuid`: %w", err)
 	}
@@ -475,7 +758,7 @@ func doAnnexInitTest(remoteRepoPath string, repoPath string) (err error) {
 
 	// - method 1: 'git annex whereis'.
 	//   Demonstrates that git-annex understands the annexed file can be found in the remote annex.
-	annexWhereis, _, err := git.NewCommand(git.DefaultContext, "annex", "whereis", "large.bin").RunStdString(&git.RunOpts{Dir: repoPath})
+	annexWhereis, _, err := git.NewCommandNoGlobals("annex", "whereis", "large.bin").RunStdString(&git.RunOpts{Dir: repoPath})
 	if err != nil {
 		return fmt.Errorf("Couldn't `git annex whereis large.bin`: %w", err)
 	}
@@ -494,7 +777,7 @@ func doAnnexDownloadTest(remoteRepoPath string, repoPath string) (err error) {
 	//     "git annex copy" will notice and run "git annex init", silently.
 	//     This shouldn't change any results, but be aware in case it does.
 
-	_, _, err = git.NewCommand(git.DefaultContext, "annex", "copy", "--from", "origin").RunStdString(&git.RunOpts{Dir: repoPath})
+	_, _, err = git.NewCommandNoGlobals("annex", "copy", "--from", "origin").RunStdString(&git.RunOpts{Dir: repoPath})
 	if err != nil {
 		return err
 	}
@@ -542,12 +825,12 @@ func doAnnexUploadTest(remoteRepoPath string, repoPath string) (err error) {
 		return err
 	}
 
-	_, _, err = git.NewCommand(git.DefaultContext, "annex", "copy", "--to", "origin").RunStdString(&git.RunOpts{Dir: repoPath})
+	_, _, err = git.NewCommandNoGlobals("annex", "copy", "--to", "origin").RunStdString(&git.RunOpts{Dir: repoPath})
 	if err != nil {
 		return err
 	}
 
-	_, _, err = git.NewCommand(git.DefaultContext, "annex", "sync", "--no-content").RunStdString(&git.RunOpts{Dir: repoPath})
+	_, _, err = git.NewCommandNoGlobals("annex", "sync", "--no-content").RunStdString(&git.RunOpts{Dir: repoPath})
 	if err != nil {
 		return err
 	}
@@ -659,7 +942,7 @@ func doInitAnnexRepository(repoPath string) error {
 	}
 
 	// 'git annex init'
-	err = git.NewCommand(git.DefaultContext, "annex", "init", "test-repo").Run(&git.RunOpts{Dir: repoPath})
+	err = git.NewCommandNoGlobals("annex", "init", "test-repo").Run(&git.RunOpts{Dir: repoPath})
 	if err != nil {
 		return err
 	}
@@ -705,7 +988,7 @@ func doInitRemoteAnnexRepository(t *testing.T, repoURL *url.URL) error {
 		return err
 	}
 
-	_, _, err = git.NewCommand(git.DefaultContext, "annex", "sync", "--content").RunStdString(&git.RunOpts{Dir: repoPath})
+	_, _, err = git.NewCommandNoGlobals("annex", "sync", "--content").RunStdString(&git.RunOpts{Dir: repoPath})
 	if err != nil {
 		return err
 	}
@@ -753,4 +1036,53 @@ func withAnnexCtxKeyFile(t *testing.T, ctx APITestContext, callback func()) {
 	os.Setenv("GIT_ANNEX_USE_GIT_SSH", "1") // withKeyFile works by setting GIT_SSH_COMMAND, but git-annex only respects that if this is set
 
 	withCtxKeyFile(t, ctx, callback)
+}
+
+/* like withKeyFile(), but sets HTTP credentials instead of SSH credentials.
+
+   It does this by temporarily arranging for through `git config --global`
+   to use git-credential-store(1) with the password written to a tempfile.
+
+   This is the only reliable way to pass HTTP credentials non-interactively
+   to git-annex.  See https://git-annex.branchable.com/bugs/http_remotes_ignore_annex.web-options_--netrc/#comment-b5a299e9826b322f2d85c96d4929a430
+   for joeyh's proclamation on the subject.
+
+   This **is only effective** when used around git.NewCommandNoGlobals() calls.
+   git.NewCommand() disables credential.helper as a precaution (see modules/git/git.go).
+
+   In contrast, the tests in git_test.go put the password in the remote's URL like
+   `git config remote.origin.url http://user2:password@localhost:3003/user2/repo-name.git`,
+   writing the password in repoPath+"/.git/config". That would be equally good, except
+   that git-annex ignores it!
+*/
+func withAnnexCtxHTTPPassword(t *testing.T, u *url.URL, ctx APITestContext, callback func()) {
+
+	credentialedURL := *u
+	credentialedURL.User = url.UserPassword(ctx.Username, userPassword) // NB: all test users use the same password
+
+	creds := path.Join(t.TempDir(), "creds")
+	require.NoError(t, os.WriteFile(creds, []byte(credentialedURL.String()), 0600))
+
+	originalCredentialHelper, _, err := git.NewCommandNoGlobals("config", "--global", "credential.helper").RunStdString(&git.RunOpts{})
+	if err != nil && !err.IsExitCode(1) {
+		// ignore the 'error' thrown when credential.helper is unset (when git config returns 1)
+		// but catch all others
+		require.NoError(t, err)
+	}
+	hasOriginalCredentialHelper := (err == nil)
+
+	_, _, err = git.NewCommandNoGlobals("config", "--global", "credential.helper", git.CmdArg(fmt.Sprintf("store --file=%s", creds))).RunStdString(&git.RunOpts{})
+	require.NoError(t, err)
+
+	defer (func() {
+		// reset
+		if hasOriginalCredentialHelper {
+			_, _, err = git.NewCommandNoGlobals("config", "--global", "credential.helper", git.CmdArg(originalCredentialHelper)).RunStdString(&git.RunOpts{})
+		} else {
+			_, _, err = git.NewCommandNoGlobals("config", "--global", "--unset", "credential.helper").RunStdString(&git.RunOpts{})
+		}
+		require.NoError(t, err)
+	})()
+
+	callback()
 }
