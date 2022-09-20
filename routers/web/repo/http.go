@@ -611,3 +611,38 @@ func GetIdxFile(ctx *context.Context) {
 		h.sendFile("application/x-git-packed-objects-toc", "objects/pack/pack-"+ctx.Params("file")+".idx")
 	}
 }
+
+// GetAnnexObject implements git-annex dumb HTTP
+func GetAnnexObject(ctx *context.Context) {
+	//if !setting.Annex.Enabled { // TODO
+	if false {
+		ctx.PlainText(http.StatusNotFound, "Not found")
+		return
+	}
+	h := httpBase(ctx)
+	if h != nil {
+		// git-annex objects are stored in .git/annex/objects/{hash1}/{hash2}/{key}/{key}
+		// where key is a string containing the size and (usually SHA256) checksum of the file,
+		// and hash1+hash2 are the first few bits of the md5sum of key itself.
+		// ({hash1}/{hash2}/ is just there to avoid putting too many files in one directory)
+		// ref: https://git-annex.branchable.com/internals/hashing/
+
+		// keyDir should = key, but we don't enforce that
+		object := path.Join(ctx.Params("hash1"), ctx.Params("hash2"), ctx.Params("keyDir"), ctx.Params("key"))
+
+		// Sanitize the input against directory traversals.
+		//
+		// This works because, if a path starts rooted,
+		// path.Clean() will remove all excess '..'. So
+		// this pretends the path is rooted ("/"), then
+		// path.Join() calls path.Clean() internally,
+		// then this unroots the path it ([1:]) (and 
+		//
+		// The router code also disallows "..", so this should be)
+		// redundant, but it's defensive to have it here.
+		object = path.Join("/", object)[1:]
+
+		h.setHeaderCacheForever()
+		h.sendFile("application/octet-stream", "annex/objects/"+object)
+	}
+}
