@@ -11,6 +11,10 @@ import (
 	"strings"
 )
 
+func (te *TreeEntry) Repo() *Repository {
+	return te.ptree.repo
+}
+
 // Type returns the type of the entry (commit, tree, blob)
 func (te *TreeEntry) Type() string {
 	switch te.Mode() {
