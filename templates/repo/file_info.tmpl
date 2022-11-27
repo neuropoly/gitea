@@ -12,6 +12,7 @@
 	{{if .FileSize}}
 		<div class="file-info-entry">
 			{{FileSize .FileSize}}{{if .IsLFSFile}} ({{ctx.Locale.Tr "repo.stored_lfs"}}){{end}}
+			{{if .IsAnnexFile}} ({{ctx.locale.Tr "repo.stored_annex"}}){{end}}
 		</div>
 	{{end}}
 	{{if .LFSLock}}
