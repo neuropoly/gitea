@@ -12,7 +12,7 @@ package annex
 
 import (
 	"errors"
-	"fmt"n
+	"fmt"
 	"os"
 	"path"
 	"strings"
