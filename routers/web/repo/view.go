@@ -668,6 +668,10 @@ func renderFile(ctx *context.Context, entry *git.TreeEntry, treeLink, rawLink st
 		ctx.Data["IsAudioFile"] = true
 	case st.IsImage() && (setting.UI.SVG.Enabled || !st.IsSvgImage()):
 		ctx.Data["IsImageFile"] = true
+	case strings.HasSuffix(strings.ToLower(blob.Name()), ".nii") || strings.HasSuffix(strings.ToLower(blob.Name()), ".nii.gz"):
+		ctx.Data["IsNIfTI"] = true
+	case strings.HasSuffix(strings.ToLower(blob.Name()), ".dcm") || strings.HasSuffix(strings.ToLower(blob.Name()), ".dicom"):
+		ctx.Data["IsDICOM"] = true
 	default:
 		if fileSize >= setting.UI.MaxDisplayFileSize {
 			ctx.Data["IsFileTooLarge"] = true
