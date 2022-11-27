@@ -26,6 +26,7 @@ import (
 	repo_model "code.gitea.io/gitea/models/repo"
 	unit_model "code.gitea.io/gitea/models/unit"
 	user_model "code.gitea.io/gitea/models/user"
+	"code.gitea.io/gitea/modules/annex"
 	"code.gitea.io/gitea/modules/base"
 	"code.gitea.io/gitea/modules/cache"
 	"code.gitea.io/gitea/modules/charset"
@@ -411,6 +412,7 @@ func renderFile(ctx *context.Context, entry *git.TreeEntry, treeLink, rawLink st
 	isTextFile := st.IsText()
 
 	isLFSFile := false
+	isAnnexFile := false
 	isDisplayingSource := ctx.FormString("display") == "source"
 	isDisplayingRendered := !isDisplayingSource
 
@@ -452,6 +454,52 @@ func renderFile(ctx *context.Context, entry *git.TreeEntry, treeLink, rawLink st
 		}
 	}
 
+	isAnnexed, err := annex.IsAnnexed(entry)
+	if err != nil {
+		ctx.ServerError("annex.IsAnnexed()", err)
+		return
+	}
+	if isAnnexed {
+		// TODO: this code could be merged with the LFS case, especially the redundant type sniffer,
+		//       but it is *currently* written this way to make merging with the non-annex upstream easier:
+		//       this way, the git-annex patch is (mostly) pure additions.
+
+		isAnnexFile = true
+		annexContent, err := annex.Content(entry)
+		if err != nil {
+			// in the case where annex content is missing, what should happen?
+			// do we render the page with an error message?
+			// actually that's not a bad idea, there's some sort of error message situation
+			// TODO: display an error to the user explaining that their data is missing
+			ctx.NotFound("annex.Content", err)
+			return
+		}
+		defer annexContent.Close()
+
+		dataRc = annexContent // NB: annexContent is a File, dataRc is a io.ReadCloser; we need both
+
+		stat, err := annexContent.Stat()
+		if err != nil {
+			ctx.ServerError("annex.Content().Stat()", err)
+			return
+		}
+		fileSize = stat.Size()
+
+		buf = make([]byte, 1024)
+		n, _ = util.ReadAtMost(dataRc, buf)
+		buf = buf[:n]
+
+		st = typesniffer.DetectContentType(buf)
+		isTextFile = st.IsText()
+
+		// pre-git-annex v7, all annexed files were represented in-repo as symlinks;
+		// but we pretend they aren't, since that's a distracting quirk of git-annex
+		// and not a meaningful choice on the user's part
+		ctx.Data["FileIsSymlink"] = false
+
+		ctx.Data["RawFileLink"] = ctx.Repo.RepoLink + "/media/" + ctx.Repo.BranchNameSubURL() + "/" + util.PathEscapeSegments(ctx.Repo.TreePath)
+	}
+
 	isRepresentableAsText := st.IsRepresentableAsText()
 	if !isRepresentableAsText {
 		// If we can't show plain text, always try to render.
@@ -459,6 +507,7 @@ func renderFile(ctx *context.Context, entry *git.TreeEntry, treeLink, rawLink st
 		isDisplayingRendered = true
 	}
 	ctx.Data["IsLFSFile"] = isLFSFile
+	ctx.Data["IsAnnexFile"] = isAnnexFile
 	ctx.Data["FileSize"] = fileSize
 	ctx.Data["IsTextFile"] = isTextFile
 	ctx.Data["IsRepresentableAsText"] = isRepresentableAsText

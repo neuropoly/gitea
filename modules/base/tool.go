@@ -21,6 +21,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"code.gitea.io/gitea/modules/annex"
 	"code.gitea.io/gitea/modules/git"
 	"code.gitea.io/gitea/modules/log"
 	"code.gitea.io/gitea/modules/setting"
@@ -270,6 +271,12 @@ func IsLetter(ch rune) bool {
 func EntryIcon(entry *git.TreeEntry) string {
 	switch {
 	case entry.IsLink():
+		isAnnexed, _ := annex.IsAnnexed(entry)
+		if isAnnexed {
+			// git-annex files are sometimes stored as symlinks;
+			// short-circuit that so like LFS they are displayed as regular files
+			return "file"
+		}
 		te, err := entry.FollowLink()
 		if err != nil {
 			log.Debug(err.Error())
