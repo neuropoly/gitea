@@ -3,16 +3,16 @@
 // license that can be found in the LICENSE file.
 
 // Unlike modules/lfs, which operates mainly on git.Blobs, this operates on git.TreeEntrys.
-// The motivation for this is that TreeEntrys have an easy path to finding the on-disk repo path,
-// while blobs do not (in fact, for testing, blobs might live in a virtual in-RAM mock filesystem,
-// if using the gogit build). And we need to know the repo path so we can give it to git-annex,
-// to let it examine the data it stores in .git/annex/.
+// The motivation for this is that TreeEntrys have an easy pointer to the on-disk repo path,
+// while blobs do not (in fact, if building with TAGS=gogit, blobs might exist only in a mock
+// filesystem, living only in process RAM). We must have the on-disk path to do anything
+// useful with git-annex because all of its interesting data is on-disk under .git/annex/.
 
 package annex
 
 import (
 	"errors"
-	"fmt"
+	"fmt"n
 	"os"
 	"path"
 	"strings"
