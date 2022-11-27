@@ -25,6 +25,7 @@ import (
 	repo_model "code.gitea.io/gitea/models/repo"
 	unit_model "code.gitea.io/gitea/models/unit"
 	user_model "code.gitea.io/gitea/models/user"
+	"code.gitea.io/gitea/modules/annex"
 	"code.gitea.io/gitea/modules/base"
 	"code.gitea.io/gitea/modules/charset"
 	"code.gitea.io/gitea/modules/container"
@@ -387,6 +388,7 @@ func renderFile(ctx *context.Context, entry *git.TreeEntry, treeLink, rawLink st
 	isTextFile := st.IsText()
 
 	isLFSFile := false
+	isAnnexFile := false
 	isDisplayingSource := ctx.FormString("display") == "source"
 	isDisplayingRendered := !isDisplayingSource
 
@@ -428,13 +430,61 @@ func renderFile(ctx *context.Context, entry *git.TreeEntry, treeLink, rawLink st
 		}
 	}
 
+	isAnnexed, err := annex.IsAnnexed(entry)
+	if err != nil {
+		ctx.ServerError("annex.IsAnnexed", err)
+		return
+	}
+	if isAnnexed {
+		isAnnexFile = true
+
+		// TODO: this code could be merged with the LFS case, especially the redundant type sniffer,
+		//       but it is *currently* written this way to make merging with the non-annex upstream easier:
+		//       this way, the git-annex patch is (mostly) pure additions.
+
+		annexContent, err := annex.Content(entry)
+		if err != nil {
+			// in the case where annex content is missing, what should happen?
+			// do we render the page with an error message?
+			// actually that's not a bad idea, there's some sort of error message situation
+			// TODO: display an error to the user explaining that their data is missing
+			ctx.ServerError("annex.Content", err)
+			return
+		}
+
+		stat, err := annexContent.Stat()
+		if err != nil {
+			ctx.ServerError("annexContent.Stat", err)
+			return
+		}
+
+		buf = make([]byte, 1024)
+		n, _ := util.ReadAtMost(annexContent, buf)
+		buf = buf[:n]
+
+		dataRc = annexContent
+
+		st = typesniffer.DetectContentType(buf)
+		isTextFile = st.IsText()
+
+		fileSize = stat.Size()
+		ctx.Data["RawFileLink"] = ctx.Repo.RepoLink + "/media/" + ctx.Repo.BranchNameSubURL() + "/" + util.PathEscapeSegments(ctx.Repo.TreePath)
+
+		// pre-git-annex v7, all annexed files were represented in-repo as symlinks;
+		// but we pretend they aren't, since that's a distracting quirk of git-annex
+		// and not a meaningful choice on the user's part
+		ctx.Data["FileIsSymlink"] = false
+	}
+
 	isRepresentableAsText := st.IsRepresentableAsText()
+
 	if !isRepresentableAsText {
 		// If we can't show plain text, always try to render.
 		isDisplayingSource = false
 		isDisplayingRendered = true
 	}
 	ctx.Data["IsLFSFile"] = isLFSFile
+	ctx.Data["IsAnnexFile"] = isAnnexFile
 	ctx.Data["FileSize"] = fileSize
 	ctx.Data["IsTextFile"] = isTextFile
 	ctx.Data["IsRepresentableAsText"] = isRepresentableAsText
@@ -463,6 +513,9 @@ func renderFile(ctx *context.Context, entry *git.TreeEntry, treeLink, rawLink st
 	// Assume file is not editable first.
 	if isLFSFile {
 		ctx.Data["EditFileTooltip"] = ctx.Tr("repo.editor.cannot_edit_lfs_files")
+	} else if isAnnexFile {
+		// TODO: add cannot_edit_annex_files
+		ctx.Data["EditFileTooltip"] = ctx.Tr("repo.editor.cannot_edit_annex_files")
 	} else if !isRepresentableAsText {
 		ctx.Data["EditFileTooltip"] = ctx.Tr("repo.editor.cannot_edit_non_text_files")
 	}
@@ -571,7 +624,7 @@ func renderFile(ctx *context.Context, entry *git.TreeEntry, treeLink, rawLink st
 			ctx.Data["FileContent"] = fileContent
 			ctx.Data["LineEscapeStatus"] = statuses
 		}
-		if !isLFSFile {
+		if !isLFSFile && !isAnnexFile {
 			if ctx.Repo.CanEnableEditor(ctx.Doer) {
 				if lfsLock != nil && lfsLock.OwnerID != ctx.Doer.ID {
 					ctx.Data["CanEditFile"] = false
