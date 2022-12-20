@@ -57,8 +57,8 @@ type namedBlob struct {
 }
 
 // FIXME: There has to be a more efficient way of doing this
-func getReadmeFileFromPath(ctx *context.Context, commit *git.Commit, treePath string) (*namedBlob, error) {
-	tree, err := commit.SubTree(treePath)
+func findReadmeFileInPath(ctx *context.Context, treePath string) (*namedBlob, error) {
+	tree, err := ctx.Repo.Commit.SubTree(treePath)
 	if err != nil {
 		return nil, err
 	}
@@ -80,6 +80,7 @@ func getReadmeFileFromPath(ctx *context.Context, commit *git.Commit, treePath st
 			continue
 		}
 		if i, ok := markup.IsReadmeFileExtension(entry.Name(), exts...); ok {
+			log.Debug("Potential readme file: %s", entry.Name())
 			if readmeFiles[i] == nil || base.NaturalSortLess(readmeFiles[i].name, entry.Blob().Name()) {
 				name := entry.Name()
 				isSymlink := entry.IsLink()
@@ -107,11 +108,28 @@ func getReadmeFileFromPath(ctx *context.Context, commit *git.Commit, treePath st
 			break
 		}
 	}
+
+	// as a special case for the top-level repo introduction README,
+	// fall back to subfolders, looking for e.g. docs/README.md, .gitea/README.zh-CN.txt, .github/README.txt, ...
+	if treePath == "" && readmeFile == nil {
+		for _, subfolder := range []string{"docs", ".gitea", ".github"} {
+			var err error
+			readmeFile, err = findReadmeFileInPath(ctx, subfolder)
+			if err != nil && !git.IsErrNotExist(err) {
+				return nil, err
+			}
+			if readmeFile != nil {
+				readmeFile.name = subfolder + "/" + readmeFile.name
+				break
+			}
+		}
+	}
+
 	return readmeFile, nil
 }
 
 func renderDirectory(ctx *context.Context, treeLink string) {
-	entries := renderDirectoryFiles(ctx, 1*time.Second)
+	renderDirectoryFiles(ctx, 1*time.Second)
 	if ctx.Written() {
 		return
 	}
@@ -127,12 +145,20 @@ func renderDirectory(ctx *context.Context, treeLink string) {
 		ctx.Data["CanUploadFile"] = setting.Repository.Upload.Enabled && !ctx.Repo.Repository.IsArchived
 	}
 
-	readmeFile, readmeTreelink := findReadmeFile(ctx, entries, treeLink)
-	if ctx.Written() || readmeFile == nil {
+	if ctx.Written() {
 		return
 	}
 
-	renderReadmeFile(ctx, readmeFile, readmeTreelink)
+	readmeFile, err := findReadmeFile(ctx)
+	if err != nil {
+		ctx.ServerError("findReadmeFile", err)
+		return
+	}
+	if readmeFile == nil {
+		return
+	}
+
+	renderReadmeFile(ctx, readmeFile, treeLink)
 }
 
 // localizedExtensions prepends the provided language code with and without a
@@ -157,87 +183,12 @@ func localizedExtensions(ext, languageCode string) (localizedExts []string) {
 	return []string{lowerLangCode + ext, ext}
 }
 
-func findReadmeFile(ctx *context.Context, entries git.Entries, treeLink string) (*namedBlob, string) {
-	// Create a list of extensions in priority order
-	// 1. Markdown files - with and without localisation - e.g. README.en-us.md or README.md
-	// 2. Txt files - e.g. README.txt
-	// 3. No extension - e.g. README
-	exts := append(localizedExtensions(".md", ctx.Language()), ".txt", "") // sorted by priority
-	extCount := len(exts)
-	readmeFiles := make([]*namedBlob, extCount+1)
-
-	docsEntries := make([]*git.TreeEntry, 3) // (one of docs/, .gitea/ or .github/)
-	for _, entry := range entries {
-		if entry.IsDir() {
-			lowerName := strings.ToLower(entry.Name())
-			switch lowerName {
-			case "docs":
-				if entry.Name() == "docs" || docsEntries[0] == nil {
-					docsEntries[0] = entry
-				}
-			case ".gitea":
-				if entry.Name() == ".gitea" || docsEntries[1] == nil {
-					docsEntries[1] = entry
-				}
-			case ".github":
-				if entry.Name() == ".github" || docsEntries[2] == nil {
-					docsEntries[2] = entry
-				}
-			}
-			continue
-		}
-
-		if i, ok := markup.IsReadmeFileExtension(entry.Name(), exts...); ok {
-			log.Debug("Potential readme file: %s", entry.Name())
-			name := entry.Name()
-			isSymlink := entry.IsLink()
-			target := entry
-			if isSymlink {
-				var err error
-				target, err = entry.FollowLinks()
-				if err != nil && !git.IsErrBadLink(err) {
-					ctx.ServerError("FollowLinks", err)
-					return nil, ""
-				}
-			}
-			if target != nil && (target.IsExecutable() || target.IsRegular()) {
-				readmeFiles[i] = &namedBlob{
-					name,
-					isSymlink,
-					target.Blob(),
-				}
-			}
-		}
+func findReadmeFile(ctx *context.Context) (*namedBlob, error) {
+	readmeFile, err := findReadmeFileInPath(ctx, ctx.Repo.TreePath)
+	if err != nil {
+		return nil, err
 	}
-
-	var readmeFile *namedBlob
-	readmeTreelink := treeLink
-	for _, f := range readmeFiles {
-		if f != nil {
-			readmeFile = f
-			break
-		}
-	}
-
-	if ctx.Repo.TreePath == "" && readmeFile == nil {
-		for _, entry := range docsEntries {
-			if entry == nil {
-				continue
-			}
-			var err error
-			readmeFile, err = getReadmeFileFromPath(ctx, ctx.Repo.Commit, entry.GetSubJumpablePathName())
-			if err != nil {
-				ctx.ServerError("getReadmeFileFromPath", err)
-				return nil, ""
-			}
-			if readmeFile != nil {
-				readmeFile.name = entry.Name() + "/" + readmeFile.name
-				readmeTreelink = treeLink + "/" + util.PathEscapeSegments(entry.GetSubJumpablePathName())
-				break
-			}
-		}
-	}
-	return readmeFile, readmeTreelink
+	return readmeFile, nil
 }
 
 type fileInfo struct {
@@ -299,7 +250,7 @@ func getFileReader(repoID int64, blob *git.Blob) ([]byte, io.ReadCloser, *fileIn
 	return buf, dataRc, &fileInfo{st.IsText(), true, meta.Size, &meta.Pointer, st}, nil
 }
 
-func renderReadmeFile(ctx *context.Context, readmeFile *namedBlob, readmeTreelink string) {
+func renderReadmeFile(ctx *context.Context, readmeFile *namedBlob, treeLink string) {
 	ctx.Data["RawFileLink"] = ""
 	ctx.Data["ReadmeInList"] = true
 	ctx.Data["ReadmeExist"] = true
@@ -342,7 +293,7 @@ func renderReadmeFile(ctx *context.Context, readmeFile *namedBlob, readmeTreelin
 		ctx.Data["EscapeStatus"], ctx.Data["FileContent"], err = markupRender(ctx, &markup.RenderContext{
 			Ctx:          ctx,
 			RelativePath: path.Join(ctx.Repo.TreePath, readmeFile.name), // ctx.Repo.TreePath is the directory not the Readme so we must append the Readme filename (and path).
-			URLPrefix:    readmeTreelink,
+			URLPrefix:    path.Dir(treeLink),
 			Metas:        ctx.Repo.Repository.ComposeDocumentMetas(),
 			GitRepo:      ctx.Repo.GitRepo,
 		}, rd)
@@ -780,11 +731,10 @@ func LastCommit(ctx *context.Context) {
 	ctx.HTML(http.StatusOK, tplRepoViewList)
 }
 
-func renderDirectoryFiles(ctx *context.Context, timeout time.Duration) git.Entries {
+func renderDirectoryFiles(ctx *context.Context, timeout time.Duration) {
 	tree, err := ctx.Repo.Commit.SubTree(ctx.Repo.TreePath)
 	if err != nil {
 		ctx.NotFoundOrServerError("Repo.Commit.SubTree", git.IsErrNotExist, err)
-		return nil
 	}
 
 	ctx.Data["LastCommitLoaderURL"] = ctx.Repo.RepoLink + "/lastcommit/" + url.PathEscape(ctx.Repo.CommitID) + "/" + util.PathEscapeSegments(ctx.Repo.TreePath)
@@ -793,18 +743,18 @@ func renderDirectoryFiles(ctx *context.Context, timeout time.Duration) git.Entri
 	entry, err := ctx.Repo.Commit.GetTreeEntryByPath(ctx.Repo.TreePath)
 	if err != nil {
 		ctx.NotFoundOrServerError("Repo.Commit.GetTreeEntryByPath", git.IsErrNotExist, err)
-		return nil
+		return
 	}
 
 	if !entry.IsDir() {
 		ctx.NotFoundOrServerError("Repo.Commit.GetTreeEntryByPath", git.IsErrNotExist, err)
-		return nil
+		return
 	}
 
 	allEntries, err := tree.ListEntries()
 	if err != nil {
 		ctx.ServerError("ListEntries", err)
-		return nil
+		return
 	}
 	allEntries.CustomSort(base.NaturalSortLess)
 
@@ -832,7 +782,7 @@ func renderDirectoryFiles(ctx *context.Context, timeout time.Duration) git.Entri
 	ctx.Data["Files"], latestCommit, err = entries.GetCommitsInfo(commitInfoCtx, ctx.Repo.Commit, ctx.Repo.TreePath)
 	if err != nil {
 		ctx.ServerError("GetCommitsInfo", err)
-		return nil
+		return
 	}
 
 	// Show latest commit info of repository in table header,
@@ -846,7 +796,7 @@ func renderDirectoryFiles(ctx *context.Context, timeout time.Duration) git.Entri
 			return repo_model.IsOwnerMemberCollaborator(ctx.Repo.Repository, user.ID)
 		}, nil); err != nil {
 			ctx.ServerError("CalculateTrustStatus", err)
-			return nil
+			return
 		}
 		ctx.Data["LatestCommitVerification"] = verification
 		ctx.Data["LatestCommitUser"] = user_model.ValidateCommitWithEmail(latestCommit)
@@ -869,8 +819,6 @@ func renderDirectoryFiles(ctx *context.Context, timeout time.Duration) git.Entri
 
 	ctx.Data["TreeLink"] = treeLink
 	ctx.Data["SSHDomain"] = setting.SSH.Domain
-
-	return allEntries
 }
 
 func renderLanguageStats(ctx *context.Context) {
