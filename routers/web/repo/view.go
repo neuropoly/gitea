@@ -95,12 +95,7 @@ func isReadmeFileExtension(name string, ext ...string) (int, bool) {
 }
 
 // FIXME: There has to be a more efficient way of doing this
-func findReadmeFileInPath(ctx *context.Context, treePath string) (*namedBlob, error) {
-	tree, err := ctx.Repo.Commit.SubTree(treePath)
-	if err != nil {
-		return nil, err
-	}
-
+func findReadmeFileInTree(ctx *context.Context, tree *git.Tree, searchSubtrees bool) (*namedBlob, error) {
 	entries, err := tree.ListEntries()
 	if err != nil {
 		return nil, err
@@ -113,8 +108,28 @@ func findReadmeFileInPath(ctx *context.Context, treePath string) (*namedBlob, er
 	exts := append(localizedExtensions(".md", ctx.Language()), ".txt", "") // sorted by priority
 	extCount := len(exts)
 	readmeFiles := make([]*namedBlob, extCount+1)
+
+	docsEntries := make([]*git.TreeEntry, 3) // (one of docs/, .gitea/ or .github/)
 	for _, entry := range entries {
 		if entry.IsDir() {
+			// as a special case for the top-level repo introduction README,
+			// fall back to subfolders, looking for e.g. docs/README.md, .gitea/README.zh-CN.txt, .github/README.txt, ...
+			// (note that docsEntries is ignored unless searchSubtrees)
+			lowerName := strings.ToLower(entry.Name())
+			switch lowerName {
+			case "docs":
+				if entry.Name() == "docs" || docsEntries[0] == nil {
+					docsEntries[0] = entry
+				}
+			case ".gitea":
+				if entry.Name() == ".gitea" || docsEntries[1] == nil {
+					docsEntries[1] = entry
+				}
+			case ".github":
+				if entry.Name() == ".github" || docsEntries[2] == nil {
+					docsEntries[2] = entry
+				}
+			}
 			continue
 		}
 		if i, ok := isReadmeFileExtension(entry.Name(), exts...); ok {
@@ -147,17 +162,23 @@ func findReadmeFileInPath(ctx *context.Context, treePath string) (*namedBlob, er
 		}
 	}
 
-	// as a special case for the top-level repo introduction README,
-	// fall back to subfolders, looking for e.g. docs/README.md, .gitea/README.zh-CN.txt, .github/README.txt, ...
-	if treePath == "" && readmeFile == nil {
-		for _, subfolder := range []string{"docs", ".gitea", ".github"} {
+	if searchSubtrees && readmeFile == nil {
+		for _, subTreeEntry := range docsEntries {
+			if subTreeEntry == nil {
+				continue
+			}
+			subTree := subTreeEntry.Tree()
+			if subTree == nil {
+				// this should be impossible; if subTreeEntry exists so should this.
+				continue
+			}
 			var err error
-			readmeFile, err = findReadmeFileInPath(ctx, subfolder)
+			readmeFile, err = findReadmeFileInTree(ctx, subTree, false)
 			if err != nil && !git.IsErrNotExist(err) {
 				return nil, err
 			}
 			if readmeFile != nil {
-				readmeFile.name = subfolder + "/" + readmeFile.name
+				readmeFile.name = subTreeEntry.Name() + "/" + readmeFile.name
 				break
 			}
 		}
@@ -222,7 +243,11 @@ func localizedExtensions(ext, languageCode string) (localizedExts []string) {
 }
 
 func findReadmeFile(ctx *context.Context) (*namedBlob, error) {
-	readmeFile, err := findReadmeFileInPath(ctx, ctx.Repo.TreePath)
+	tree, err := ctx.Repo.Commit.SubTree(ctx.Repo.TreePath)
+	if err != nil {
+		return nil, err
+	}
+	readmeFile, err := findReadmeFileInTree(ctx, tree, (ctx.Repo.TreePath == ""))
 	if err != nil {
 		return nil, err
 	}
