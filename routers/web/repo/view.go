@@ -95,12 +95,7 @@ func isReadmeFileExtension(name string, ext ...string) (int, bool) {
 }
 
 // FIXME: There has to be a more efficient way of doing this
-func findReadmeFileInTree(ctx *context.Context, tree *git.Tree, searchSubtrees bool) (*namedBlob, error) {
-	entries, err := tree.ListEntries()
-	if err != nil {
-		return nil, err
-	}
-
+func findReadmeFileInEntries(ctx *context.Context, entries []*git.TreeEntry, searchSubtrees bool) (*namedBlob, error) {
 	// Create a list of extensions in priority order
 	// 1. Markdown files - with and without localisation - e.g. README.en-us.md or README.md
 	// 2. Txt files - e.g. README.txt
@@ -139,6 +134,7 @@ func findReadmeFileInTree(ctx *context.Context, tree *git.Tree, searchSubtrees b
 				isSymlink := entry.IsLink()
 				target := entry
 				if isSymlink {
+					var err error
 					target, err = entry.FollowLinks()
 					if err != nil && !git.IsErrBadLink(err) {
 						return nil, err
@@ -173,7 +169,11 @@ func findReadmeFileInTree(ctx *context.Context, tree *git.Tree, searchSubtrees b
 				continue
 			}
 			var err error
-			readmeFile, err = findReadmeFileInTree(ctx, subTree, false)
+			childEntries, err := subTree.ListEntries()
+			if err != nil {
+				return nil, err
+			}
+			readmeFile, err = findReadmeFileInEntries(ctx, childEntries, false)
 			if err != nil && !git.IsErrNotExist(err) {
 				return nil, err
 			}
@@ -247,7 +247,11 @@ func findReadmeFile(ctx *context.Context) (*namedBlob, error) {
 	if err != nil {
 		return nil, err
 	}
-	readmeFile, err := findReadmeFileInTree(ctx, tree, (ctx.Repo.TreePath == ""))
+	entries, err := tree.ListEntries()
+	if err != nil {
+		return nil, err
+	}
+	readmeFile, err := findReadmeFileInEntries(ctx, entries, (ctx.Repo.TreePath == ""))
 	if err != nil {
 		return nil, err
 	}
