@@ -58,7 +58,7 @@ const (
 //	entries == ctx.Repo.Commit.SubTree(ctx.Repo.TreePath).ListEntries()
 //
 // FIXME: There has to be a more efficient way of doing this
-func findReadmeFileInEntries(ctx *context.Context, entries []*git.TreeEntry) (string, *git.TreeEntry, error) {
+func findReadmeFileInEntries(ctx *context.Context, entries []*git.TreeEntry, recurse bool) (string, *git.TreeEntry, error) {
 	// Create a list of extensions in priority order
 	// 1. Markdown files - with and without localisation - e.g. README.en-us.md or README.md
 	// 2. Txt files - e.g. README.txt
@@ -115,7 +115,7 @@ func findReadmeFileInEntries(ctx *context.Context, entries []*git.TreeEntry) (st
 		}
 	}
 
-	if ctx.Repo.TreePath == "" && readmeFile == nil {
+	if ctx.Repo.TreePath == "" && recurse && readmeFile == nil {
 		for _, subTreeEntry := range docsEntries {
 			if subTreeEntry == nil {
 				continue
@@ -131,7 +131,7 @@ func findReadmeFileInEntries(ctx *context.Context, entries []*git.TreeEntry) (st
 				return "", nil, err
 			}
 
-			subfolder, readmeFile, err := findReadmeFileInEntries(ctx, childEntries)
+			subfolder, readmeFile, err := findReadmeFileInEntries(ctx, childEntries, false)
 			if err != nil && !git.IsErrNotExist(err) {
 				return "", nil, err
 			}
@@ -165,7 +165,7 @@ func renderDirectory(ctx *context.Context, treeLink string) {
 		return
 	}
 
-	subfolder, readmeFile, err := findReadmeFileInEntries(ctx, entries)
+	subfolder, readmeFile, err := findReadmeFileInEntries(ctx, entries, true)
 	if err != nil {
 		ctx.ServerError("findReadmeFileInEntries", err)
 		return
