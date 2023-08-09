@@ -17,11 +17,9 @@ import (
 	webhook_service "code.gitea.io/gitea/services/webhook"
 )
 
-// swaggeroperation GET /admin/{configType:default-hooks|system-hooks} admin adminListHooks
-
 // list system or default webhooks
 func ListHooks(ctx *context.APIContext) {
-	// swagger:operation GET /admin/{configType} admin adminListHooks
+	// swagger:operation GET /admin/hooks/{configType} admin adminListHooks
 	// ---
 	// summary: List system's webhooks
 	// produces:
@@ -31,13 +29,13 @@ func ListHooks(ctx *context.APIContext) {
 	//   in: path
 	//   description: whether the hook is system-wide or copied-to-each-new-repo
 	//   type: string
-	//   enum: [system-hooks, default-hooks]
+	//   enum: [system, default]
 	//   required: true
 	// responses:
 	//   "200":
 	//     "$ref": "#/responses/HookList"
 
-	isSystemWebhook := ctx.Params(":configType") == "system-hooks"
+	isSystemWebhook := ctx.Params(":configType") == "system"
 
 	adminHooks, err := webhook.GetAdminWebhooks(ctx, isSystemWebhook, util.OptionalBoolNone)
 	if err != nil {
@@ -59,7 +57,7 @@ func ListHooks(ctx *context.APIContext) {
 
 // get a system/default hook by id
 func GetHook(ctx *context.APIContext) {
-	// swagger:operation GET /admin/{configType}/{id} admin adminGetHook
+	// swagger:operation GET /admin/hooks/{configType}/{id} admin adminGetHook
 	// ---
 	// summary: Get a hook
 	// produces:
@@ -69,7 +67,7 @@ func GetHook(ctx *context.APIContext) {
 	//   in: path
 	//   description: whether the hook is system-wide or copied-to-each-new-repo
 	//   type: string
-	//   enum: [system-hooks, default-hooks]
+	//   enum: [system, default]
 	//   required: true
 	// - name: id
 	//   in: path
@@ -81,7 +79,7 @@ func GetHook(ctx *context.APIContext) {
 	//   "200":
 	//     "$ref": "#/responses/Hook"
 
-	isSystemWebhook := ctx.Params(":configType") == "system-hooks"
+	isSystemWebhook := ctx.Params(":configType") == "system"
 
 	hookID := ctx.ParamsInt64(":id")
 	hook, err := webhook.GetAdminWebhook(ctx, hookID, isSystemWebhook)
@@ -104,7 +102,7 @@ func GetHook(ctx *context.APIContext) {
 
 // create a system or default hook
 func CreateHook(ctx *context.APIContext) {
-	// swagger:operation POST /admin/{configType} admin adminCreateHook
+	// swagger:operation POST /admin/hooks/{configType} admin adminCreateHook
 	// ---
 	// summary: Create a hook
 	// consumes:
@@ -116,7 +114,7 @@ func CreateHook(ctx *context.APIContext) {
 	//   in: path
 	//   description: whether the hook is system-wide or copied-to-each-new-repo
 	//   type: string
-	//   enum: [system-hooks, default-hooks]
+	//   enum: [system, default]
 	//   required: true
 	// - name: body
 	//   in: body
@@ -127,7 +125,7 @@ func CreateHook(ctx *context.APIContext) {
 	//   "201":
 	//     "$ref": "#/responses/Hook"
 
-	isSystemWebhook := ctx.Params(":configType") == "system-hooks"
+	isSystemWebhook := ctx.Params(":configType") == "system"
 
 	form := web.GetForm(ctx).(*api.CreateHookOption)
 
@@ -136,7 +134,7 @@ func CreateHook(ctx *context.APIContext) {
 
 // modify a system or default hook
 func EditHook(ctx *context.APIContext) {
-	// swagger:operation PATCH /admin/{configType}/{id} admin adminEditHook
+	// swagger:operation PATCH /admin/hooks/{configType}/{id} admin adminEditHook
 	// ---
 	// summary: Update a hook
 	// consumes:
@@ -148,7 +146,7 @@ func EditHook(ctx *context.APIContext) {
 	//   in: path
 	//   description: whether the hook is system-wide or copied-to-each-new-repo
 	//   type: string
-	//   enum: [system-hooks, default-hooks]
+	//   enum: [system, default]
 	//   required: true
 	// - name: id
 	//   in: path
@@ -164,7 +162,7 @@ func EditHook(ctx *context.APIContext) {
 	//   "200":
 	//     "$ref": "#/responses/Hook"
 
-	isSystemWebhook := ctx.Params(":configType") == "system-hooks"
+	isSystemWebhook := ctx.Params(":configType") == "system"
 
 	form := web.GetForm(ctx).(*api.EditHookOption)
 
@@ -175,7 +173,7 @@ func EditHook(ctx *context.APIContext) {
 
 // delete a system or default hook
 func DeleteHook(ctx *context.APIContext) {
-	// swagger:operation DELETE /admin/{configType}/{id} admin adminDeleteHook
+	// swagger:operation DELETE /admin/hooks/{configType}/{id} admin adminDeleteHook
 	// ---
 	// summary: Delete a hook
 	// produces:
@@ -185,7 +183,7 @@ func DeleteHook(ctx *context.APIContext) {
 	//   in: path
 	//   description: whether the hook is system-wide or copied-to-each-new-repo
 	//   type: string
-	//   enum: [system-hooks, default-hooks]
+	//   enum: [system, default]
 	//   required: true
 	// - name: id
 	//   in: path
