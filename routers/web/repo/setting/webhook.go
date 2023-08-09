@@ -62,10 +62,10 @@ type ownerRepoCtx struct {
 	IsAdmin         bool
 	IsSystemWebhook bool
 	// Link is the page that list all hooks -- whether that's for the current repo, the org, or the site
-	Link            string
+	Link string
 	// LinkNew and NewTemplate double as LinkEdit and EditTemplate
-	LinkNew         string
-	NewTemplate     base.TplName
+	LinkNew     string
+	NewTemplate base.TplName
 }
 
 // getOwnerRepoCtx determines whether this is a repo, owner, or admin (both default and system) context.
