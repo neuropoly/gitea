@@ -17,17 +17,17 @@ import (
 	webhook_service "code.gitea.io/gitea/services/webhook"
 )
 
-// swaggeroperation GET /admin/{hookType:default-hooks|system-hooks} admin adminListHooks
+// swaggeroperation GET /admin/{configType:default-hooks|system-hooks} admin adminListHooks
 
 // list system or default webhooks
 func ListHooks(ctx *context.APIContext) {
-	// swagger:operation GET /admin/{hookType} admin adminListHooks
+	// swagger:operation GET /admin/{configType} admin adminListHooks
 	// ---
 	// summary: List system's webhooks
 	// produces:
 	// - application/json
 	// parameters:
-	// - name: hookType
+	// - name: configType
 	//   in: path
 	//   description: whether the hook is system-wide or copied-to-each-new-repo
 	//   type: string
@@ -37,7 +37,7 @@ func ListHooks(ctx *context.APIContext) {
 	//   "200":
 	//     "$ref": "#/responses/HookList"
 
-	isSystemWebhook := ctx.Params(":hookType") == "system-hooks"
+	isSystemWebhook := ctx.Params(":configType") == "system-hooks"
 
 	adminHooks, err := webhook.GetAdminWebhooks(ctx, isSystemWebhook, util.OptionalBoolNone)
 	if err != nil {
@@ -59,13 +59,13 @@ func ListHooks(ctx *context.APIContext) {
 
 // get a system/default hook by id
 func GetHook(ctx *context.APIContext) {
-	// swagger:operation GET /admin/{hookType}/{id} admin adminGetHook
+	// swagger:operation GET /admin/{configType}/{id} admin adminGetHook
 	// ---
 	// summary: Get a hook
 	// produces:
 	// - application/json
 	// parameters:
-	// - name: hookType
+	// - name: configType
 	//   in: path
 	//   description: whether the hook is system-wide or copied-to-each-new-repo
 	//   type: string
@@ -81,7 +81,7 @@ func GetHook(ctx *context.APIContext) {
 	//   "200":
 	//     "$ref": "#/responses/Hook"
 
-	isSystemWebhook := ctx.Params(":hookType") == "system-hooks"
+	isSystemWebhook := ctx.Params(":configType") == "system-hooks"
 
 	hookID := ctx.ParamsInt64(":id")
 	hook, err := webhook.GetAdminWebhook(ctx, hookID, isSystemWebhook)
@@ -104,7 +104,7 @@ func GetHook(ctx *context.APIContext) {
 
 // create a system or default hook
 func CreateHook(ctx *context.APIContext) {
-	// swagger:operation POST /admin/{hookType} admin adminCreateHook
+	// swagger:operation POST /admin/{configType} admin adminCreateHook
 	// ---
 	// summary: Create a hook
 	// consumes:
@@ -112,7 +112,7 @@ func CreateHook(ctx *context.APIContext) {
 	// produces:
 	// - application/json
 	// parameters:
-	// - name: hookType
+	// - name: configType
 	//   in: path
 	//   description: whether the hook is system-wide or copied-to-each-new-repo
 	//   type: string
@@ -127,7 +127,7 @@ func CreateHook(ctx *context.APIContext) {
 	//   "201":
 	//     "$ref": "#/responses/Hook"
 
-	isSystemWebhook := ctx.Params(":hookType") == "system-hooks"
+	isSystemWebhook := ctx.Params(":configType") == "system-hooks"
 
 	form := web.GetForm(ctx).(*api.CreateHookOption)
 
@@ -136,7 +136,7 @@ func CreateHook(ctx *context.APIContext) {
 
 // modify a system or default hook
 func EditHook(ctx *context.APIContext) {
-	// swagger:operation PATCH /admin/{hookType}/{id} admin adminEditHook
+	// swagger:operation PATCH /admin/{configType}/{id} admin adminEditHook
 	// ---
 	// summary: Update a hook
 	// consumes:
@@ -144,7 +144,7 @@ func EditHook(ctx *context.APIContext) {
 	// produces:
 	// - application/json
 	// parameters:
-	// - name: hookType
+	// - name: configType
 	//   in: path
 	//   description: whether the hook is system-wide or copied-to-each-new-repo
 	//   type: string
@@ -164,7 +164,7 @@ func EditHook(ctx *context.APIContext) {
 	//   "200":
 	//     "$ref": "#/responses/Hook"
 
-	isSystemWebhook := ctx.Params(":hookType") == "system-hooks"
+	isSystemWebhook := ctx.Params(":configType") == "system-hooks"
 
 	form := web.GetForm(ctx).(*api.EditHookOption)
 
@@ -175,13 +175,13 @@ func EditHook(ctx *context.APIContext) {
 
 // delete a system or default hook
 func DeleteHook(ctx *context.APIContext) {
-	// swagger:operation DELETE /admin/{hookType}/{id} admin adminDeleteHook
+	// swagger:operation DELETE /admin/{configType}/{id} admin adminDeleteHook
 	// ---
 	// summary: Delete a hook
 	// produces:
 	// - application/json
 	// parameters:
-	// - name: hookType
+	// - name: configType
 	//   in: path
 	//   description: whether the hook is system-wide or copied-to-each-new-repo
 	//   type: string

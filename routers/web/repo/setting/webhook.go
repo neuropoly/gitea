@@ -61,7 +61,9 @@ type ownerRepoCtx struct {
 	RepoID          int64
 	IsAdmin         bool
 	IsSystemWebhook bool
+	// Link is the page that list all hooks -- whether that's for the current repo, the org, or the site
 	Link            string
+	// LinkNew and NewTemplate double as LinkEdit and EditTemplate
 	LinkNew         string
 	NewTemplate     base.TplName
 }
@@ -98,9 +100,9 @@ func getOwnerRepoCtx(ctx *context.Context) (*ownerRepoCtx, error) {
 	if ctx.Data["PageIsAdmin"] == true {
 		return &ownerRepoCtx{
 			IsAdmin:         true,
-			IsSystemWebhook: ctx.Params(":hookType") == "system-hooks",
+			IsSystemWebhook: ctx.Params(":configType") == "system-hooks",
 			Link:            path.Join(setting.AppSubURL, "/admin/hooks"),
-			LinkNew:         path.Join(setting.AppSubURL, "/admin/", ctx.Params(":hookType")),
+			LinkNew:         path.Join(setting.AppSubURL, "/admin/", ctx.Params(":configType")),
 			NewTemplate:     tplAdminHookNew,
 		}, nil
 	}

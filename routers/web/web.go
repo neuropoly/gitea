@@ -604,7 +604,7 @@ func registerRoutes(m *web.Route) {
 			m.Get("", admin.Webhooks)
 		}, webhooksEnabled)
 
-		m.Group("/{hookType:system-hooks|default-hooks}", func() {
+		m.Group("/{configType:system-hooks|default-hooks}", func() {
 			m.Post("/delete", admin.DeleteWebhook)
 			m.Group("/{id}", func() {
 				m.Get("", repo_setting.WebHooksEdit)
