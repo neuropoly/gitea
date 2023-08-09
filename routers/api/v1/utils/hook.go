@@ -326,9 +326,6 @@ func editHook(ctx *context.APIContext, form *api.EditHookOption, w *webhook.Webh
 			}
 			w.ContentType = webhook.ToHookContentType(ct)
 		}
-		if secret, ok := form.Config["secret"]; ok {
-			w.Secret = secret
-		}
 
 		if w.Type == webhook_module.SLACK {
 			if channel, ok := form.Config["channel"]; ok {
