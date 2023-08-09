@@ -306,7 +306,7 @@ func editWebhook(ctx *context.Context, params webhookParams) {
 	}
 
 	ctx.Flash.Success(ctx.Tr("repo.settings.update_hook_success"))
-	ctx.Redirect(fmt.Sprintf("%s/%d", orCtx.Link, w.ID))
+	ctx.Redirect(fmt.Sprintf("%s/%d", orCtx.LinkNew, w.ID))
 }
 
 // GiteaHooksNewPost response for creating Gitea webhook
@@ -584,7 +584,7 @@ func checkWebhook(ctx *context.Context) (*ownerRepoCtx, *webhook.Webhook) {
 		ctx.ServerError("getOwnerRepoCtx", err)
 		return nil, nil
 	}
-	ctx.Data["BaseLink"] = orCtx.Link
+	ctx.Data["BaseLink"] = orCtx.LinkNew
 
 	var w *webhook.Webhook
 	if orCtx.RepoID > 0 {
