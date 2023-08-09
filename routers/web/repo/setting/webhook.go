@@ -720,7 +720,7 @@ func ReplayWebhook(ctx *context.Context) {
 	}
 
 	ctx.Flash.Success(ctx.Tr("repo.settings.webhook.delivery.success"))
-	ctx.Redirect(fmt.Sprintf("%s/%d", orCtx.Link, w.ID))
+	ctx.Redirect(fmt.Sprintf("%s/%d", orCtx.LinkNew, w.ID))
 }
 
 // DeleteWebhook delete a webhook
