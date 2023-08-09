@@ -602,16 +602,15 @@ func registerRoutes(m *web.Route) {
 
 		m.Group("/hooks", func() {
 			m.Get("", admin.Webhooks)
-		}, webhooksEnabled)
-
-		m.Group("/{configType:system-hooks|default-hooks}", func() {
-			m.Post("/delete", admin.DeleteWebhook)
-			m.Group("/{id}", func() {
-				m.Get("", repo_setting.WebHooksEdit)
-				m.Post("/replay/{uuid}", repo_setting.ReplayWebhook)
+			m.Group("/{configType:system|default}", func() {
+				m.Post("/delete", admin.DeleteWebhook)
+				m.Group("/{id}", func() {
+					m.Get("", repo_setting.WebHooksEdit)
+					m.Post("/replay/{uuid}", repo_setting.ReplayWebhook)
+				})
+				addWebhookAddRoutes()
+				addWebhookEditRoutes()
 			})
-			addWebhookAddRoutes()
-			addWebhookEditRoutes()
 		}, webhooksEnabled)
 
 		m.Group("/auths", func() {

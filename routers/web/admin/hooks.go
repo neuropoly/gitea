@@ -36,8 +36,8 @@ func Webhooks(ctx *context.Context) {
 	sys["Title"] = ctx.Tr("admin.systemhooks")
 	sys["Description"] = ctx.Tr("admin.systemhooks.desc")
 	sys["Webhooks"], err = webhook.GetAdminWebhooks(ctx, true, util.OptionalBoolNone)
-	sys["BaseLink"] = setting.AppSubURL + "/admin/system-hooks"
-	sys["BaseLinkNew"] = setting.AppSubURL + "/admin/system-hooks"
+	sys["BaseLink"] = setting.AppSubURL + "/admin/hooks/system"
+	sys["BaseLinkNew"] = setting.AppSubURL + "/admin/hooks/system"
 	if err != nil {
 		ctx.ServerError("GetAdminWebhooks", err)
 		return
@@ -46,8 +46,8 @@ func Webhooks(ctx *context.Context) {
 	def["Title"] = ctx.Tr("admin.defaulthooks")
 	def["Description"] = ctx.Tr("admin.defaulthooks.desc")
 	def["Webhooks"], err = webhook.GetAdminWebhooks(ctx, false, util.OptionalBoolNone)
-	def["BaseLink"] = setting.AppSubURL + "/admin/default-hooks"
-	def["BaseLinkNew"] = setting.AppSubURL + "/admin/default-hooks"
+	def["BaseLink"] = setting.AppSubURL + "/admin/hooks/default"
+	def["BaseLinkNew"] = setting.AppSubURL + "/admin/hooks/default"
 	if err != nil {
 		ctx.ServerError("GetAdminWebhooks", err)
 		return
