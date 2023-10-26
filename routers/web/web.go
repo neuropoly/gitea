@@ -1368,7 +1368,6 @@ func registerRoutes(m *web.Route) {
 
 		m.Group("/archive", func() {
 			m.Get("/*", repo.Download)
-			m.Post("/*", repo.InitiateDownload)
 		}, repo.MustBeNotEmpty, dlSourceEnabled, reqRepoCodeReader)
 
 		m.Group("/branches", func() {
