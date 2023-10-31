@@ -10,8 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
+	"os"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +22,7 @@ import (
 	git_model "code.gitea.io/gitea/models/git"
 	repo_model "code.gitea.io/gitea/models/repo"
 	"code.gitea.io/gitea/models/unit"
+	"code.gitea.io/gitea/modules/annex"
 	"code.gitea.io/gitea/modules/context"
 	"code.gitea.io/gitea/modules/git"
 	"code.gitea.io/gitea/modules/httpcache"
@@ -307,13 +311,39 @@ func archiveDownload(ctx *context.APIContext) {
 		return
 	}
 
-	archiver, err := aReq.Await(ctx)
+	err = archiver_service.StartArchive(aReq)
 	if err != nil {
-		ctx.ServerError("archiver.Await", err)
+		ctx.ServerError("archiver_service.StartArchive", err)
 		return
 	}
 
-	download(ctx, aReq.GetArchiveName(), archiver)
+	for {
+		archiver, err := repo_model.GetRepoArchiver(ctx, aReq.RepoID, aReq.Type, aReq.CommitID)
+		if err != nil {
+			ctx.ServerError("repo_model.GetRepoArchiver", err)
+			return
+		}
+		if archiver != nil && archiver.Status == repo_model.ArchiverReady {
+			download(ctx, aReq.GetArchiveName(), archiver)
+			return
+		}
+		if archiver != nil && archiver.Status == repo_model.ArchiverGenerating {
+			filePath := os.TempDir() + "/" + strconv.FormatInt(archiver.RepoID, 10) + "-" + archiver.CommitID + "." + archiver.Type.String()
+			f, err := os.Open(filePath)
+			if err != nil {
+				// The archiver might have finished in-between repo_model.GetRepoArchiver and os.Open, retry
+				continue
+			}
+			defer f.Close()
+			r := annex.NewUntilFileDeletedReader(filePath, f)
+			downloadName := ctx.Repo.Repository.Name + "-" + aReq.GetArchiveName()
+			// TODO: figure out how to serve the file with an approximate size of the resulting archive
+			common.ServeContentByReader(ctx.Base, downloadName, -1, r)
+			return
+		}
+		// archiver was nil, retry after 0 to 1 seconds
+		time.Sleep(time.Duration(rand.Intn(int(time.Second))))
+	}
 }
 
 func download(ctx *context.APIContext, archiveName string, archiver *repo_model.RepoArchiver) {

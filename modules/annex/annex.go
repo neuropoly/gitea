@@ -152,3 +152,9 @@ func IsAnnexed(blob *git.Blob) (bool, error) {
 	}
 	return true, nil
 }
+
+// IsAnnexRepo determines if repo is a git-annex enabled repository
+func IsAnnexRepo(repo *git.Repository) bool {
+	_, _, err := git.NewCommand(repo.Ctx, "annex", "info").RunStdString(&git.RunOpts{Dir: repo.Path})
+	return err == nil
+}

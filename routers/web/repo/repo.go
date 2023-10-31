@@ -7,9 +7,13 @@ package repo
 import (
 	"errors"
 	"fmt"
+	"math/rand"
 	"net/http"
+	"os"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"code.gitea.io/gitea/models"
 	"code.gitea.io/gitea/models/db"
@@ -19,6 +23,7 @@ import (
 	repo_model "code.gitea.io/gitea/models/repo"
 	"code.gitea.io/gitea/models/unit"
 	user_model "code.gitea.io/gitea/models/user"
+	"code.gitea.io/gitea/modules/annex"
 	"code.gitea.io/gitea/modules/base"
 	"code.gitea.io/gitea/modules/cache"
 	"code.gitea.io/gitea/modules/context"
@@ -30,6 +35,7 @@ import (
 	api "code.gitea.io/gitea/modules/structs"
 	"code.gitea.io/gitea/modules/util"
 	"code.gitea.io/gitea/modules/web"
+	"code.gitea.io/gitea/routers/common"
 	"code.gitea.io/gitea/services/convert"
 	"code.gitea.io/gitea/services/forms"
 	repo_service "code.gitea.io/gitea/services/repository"
@@ -429,13 +435,39 @@ func Download(ctx *context.Context) {
 		return
 	}
 
-	archiver, err := aReq.Await(ctx)
+	err = archiver_service.StartArchive(aReq)
 	if err != nil {
-		ctx.ServerError("archiver.Await", err)
+		ctx.ServerError("archiver_service.StartArchive", err)
 		return
 	}
 
-	download(ctx, aReq.GetArchiveName(), archiver)
+	for {
+		archiver, err := repo_model.GetRepoArchiver(ctx, aReq.RepoID, aReq.Type, aReq.CommitID)
+		if err != nil {
+			ctx.ServerError("repo_model.GetRepoArchiver", err)
+			return
+		}
+		if archiver != nil && archiver.Status == repo_model.ArchiverReady {
+			download(ctx, aReq.GetArchiveName(), archiver)
+			return
+		}
+		if archiver != nil && archiver.Status == repo_model.ArchiverGenerating {
+			filePath := os.TempDir() + "/" + strconv.FormatInt(archiver.RepoID, 10) + "-" + archiver.CommitID + "." + archiver.Type.String()
+			f, err := os.Open(filePath)
+			if err != nil {
+				// The archiver might have finished in-between repo_model.GetRepoArchiver and os.Open, retry
+				continue
+			}
+			defer f.Close()
+			r := annex.NewUntilFileDeletedReader(filePath, f)
+			downloadName := ctx.Repo.Repository.Name + "-" + aReq.GetArchiveName()
+			// TODO: figure out how to serve the file with an approximate size of the resulting archive
+			common.ServeContentByReader(ctx.Base, downloadName, -1, r)
+			return
+		}
+		// archiver was nil, retry after 0 to 1 seconds
+		time.Sleep(time.Duration(rand.Intn(int(time.Second))))
+	}
 }
 
 func download(ctx *context.Context, archiveName string, archiver *repo_model.RepoArchiver) {
@@ -462,43 +494,6 @@ func download(ctx *context.Context, archiveName string, archiver *repo_model.Rep
 	ctx.ServeContent(fr, &context.ServeHeaderOptions{
 		Filename:     downloadName,
 		LastModified: archiver.CreatedUnix.AsLocalTime(),
-	})
-}
-
-// InitiateDownload will enqueue an archival request, as needed.  It may submit
-// a request that's already in-progress, but the archiver service will just
-// kind of drop it on the floor if this is the case.
-func InitiateDownload(ctx *context.Context) {
-	uri := ctx.Params("*")
-	aReq, err := archiver_service.NewRequest(ctx.Repo.Repository.ID, ctx.Repo.GitRepo, uri)
-	if err != nil {
-		ctx.ServerError("archiver_service.NewRequest", err)
-		return
-	}
-	if aReq == nil {
-		ctx.Error(http.StatusNotFound)
-		return
-	}
-
-	archiver, err := repo_model.GetRepoArchiver(ctx, aReq.RepoID, aReq.Type, aReq.CommitID)
-	if err != nil {
-		ctx.ServerError("archiver_service.StartArchive", err)
-		return
-	}
-	if archiver == nil || archiver.Status != repo_model.ArchiverReady {
-		if err := archiver_service.StartArchive(aReq); err != nil {
-			ctx.ServerError("archiver_service.StartArchive", err)
-			return
-		}
-	}
-
-	var completed bool
-	if archiver != nil && archiver.Status == repo_model.ArchiverReady {
-		completed = true
-	}
-
-	ctx.JSON(http.StatusOK, map[string]any{
-		"complete": completed,
 	})
 }
 

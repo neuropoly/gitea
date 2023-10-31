@@ -56,7 +56,6 @@ import {initRepoTemplateSearch} from './features/repo-template.js';
 import {initRepoCodeView} from './features/repo-code.js';
 import {initSshKeyFormParser} from './features/sshkey-helper.js';
 import {initUserSettings} from './features/user-settings.js';
-import {initRepoArchiveLinks} from './features/repo-common.js';
 import {initRepoMigrationStatusChecker} from './features/repo-migrate.js';
 import {
   initRepoSettingGitHook,
@@ -139,7 +138,6 @@ onDomReady(() => {
   initOrgTeamSettings();
 
   initRepoActivityTopAuthorsChart();
-  initRepoArchiveLinks();
   initRepoBranchButton();
   initRepoCodeView();
   initRepoCommentForm();

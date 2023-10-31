@@ -10,11 +10,13 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"code.gitea.io/gitea/models/db"
 	repo_model "code.gitea.io/gitea/models/repo"
+	"code.gitea.io/gitea/modules/annex"
 	"code.gitea.io/gitea/modules/git"
 	"code.gitea.io/gitea/modules/graceful"
 	"code.gitea.io/gitea/modules/log"
@@ -129,49 +131,6 @@ func (aReq *ArchiveRequest) GetArchiveName() string {
 	return strings.ReplaceAll(aReq.refName, "/", "-") + "." + aReq.Type.String()
 }
 
-// Await awaits the completion of an ArchiveRequest. If the archive has
-// already been prepared the method returns immediately. Otherwise an archiver
-// process will be started and its completion awaited. On success the returned
-// RepoArchiver may be used to download the archive. Note that even if the
-// context is cancelled/times out a started archiver will still continue to run
-// in the background.
-func (aReq *ArchiveRequest) Await(ctx context.Context) (*repo_model.RepoArchiver, error) {
-	archiver, err := repo_model.GetRepoArchiver(ctx, aReq.RepoID, aReq.Type, aReq.CommitID)
-	if err != nil {
-		return nil, fmt.Errorf("models.GetRepoArchiver: %w", err)
-	}
-
-	if archiver != nil && archiver.Status == repo_model.ArchiverReady {
-		// Archive already generated, we're done.
-		return archiver, nil
-	}
-
-	if err := StartArchive(aReq); err != nil {
-		return nil, fmt.Errorf("archiver.StartArchive: %w", err)
-	}
-
-	poll := time.NewTicker(time.Second * 1)
-	defer poll.Stop()
-
-	for {
-		select {
-		case <-graceful.GetManager().HammerContext().Done():
-			// System stopped.
-			return nil, graceful.GetManager().HammerContext().Err()
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-poll.C:
-			archiver, err = repo_model.GetRepoArchiver(ctx, aReq.RepoID, aReq.Type, aReq.CommitID)
-			if err != nil {
-				return nil, fmt.Errorf("repo_model.GetRepoArchiver: %w", err)
-			}
-			if archiver != nil && archiver.Status == repo_model.ArchiverReady {
-				return archiver, nil
-			}
-		}
-	}
-}
-
 func doArchive(ctx context.Context, r *ArchiveRequest) (*repo_model.RepoArchiver, error) {
 	txCtx, committer, err := db.TxContext(ctx)
 	if err != nil {
@@ -251,13 +210,24 @@ func doArchive(ctx context.Context, r *ArchiveRequest) (*repo_model.RepoArchiver
 				w,
 			)
 		} else {
-			err = gitRepo.CreateArchive(
-				ctx,
-				archiver.Type,
-				w,
-				setting.Repository.PrefixArchiveFiles,
-				archiver.CommitID,
-			)
+			if annex.IsAnnexRepo(gitRepo) {
+				err = annex.CreateArchive(
+					ctx,
+					gitRepo,
+					archiver.Type,
+					w,
+					setting.Repository.PrefixArchiveFiles,
+					archiver.CommitID,
+				)
+			} else {
+				err = gitRepo.CreateArchive(
+					ctx,
+					archiver.Type,
+					w,
+					setting.Repository.PrefixArchiveFiles,
+					archiver.CommitID,
+				)
+			}
 		}
 		_ = w.CloseWithError(err)
 		done <- err
@@ -266,7 +236,22 @@ func doArchive(ctx context.Context, r *ArchiveRequest) (*repo_model.RepoArchiver
 	// TODO: add lfs data to zip
 	// TODO: add submodule data to zip
 
-	if _, err := storage.RepoArchives.Save(rPath, rd, -1); err != nil {
+	// commit and close here to avoid blocking the database for the entirety of the archive generation process (might only be an issue with sqlite)
+	err = committer.Commit()
+	if err != nil {
+		return nil, err
+	}
+	committer.Close()
+
+	f, err := os.Create(os.TempDir() + "/" + strconv.FormatInt(archiver.RepoID, 10) + "-" + archiver.CommitID + "." + archiver.Type.String())
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	defer os.Remove(f.Name())
+
+	trd := io.TeeReader(rd, f)
+	if _, err := storage.RepoArchives.Save(rPath, trd, -1); err != nil {
 		return nil, fmt.Errorf("unable to write archive: %w", err)
 	}
 
@@ -274,6 +259,14 @@ func doArchive(ctx context.Context, r *ArchiveRequest) (*repo_model.RepoArchiver
 	if err != nil {
 		return nil, err
 	}
+
+	txCtx, committer, err = db.TxContext(db.DefaultContext)
+	if err != nil {
+		return nil, err
+	}
+	defer committer.Close()
+	ctx, _, finished = process.GetManager().AddContext(txCtx, fmt.Sprintf("ArchiveRequest[%d]: %s", r.RepoID, r.GetArchiveName()))
+	defer finished()
 
 	if archiver.Status == repo_model.ArchiverGenerating {
 		archiver.Status = repo_model.ArchiverReady
