@@ -15,6 +15,7 @@ import (
 
 	"code.gitea.io/gitea/models/db"
 	repo_model "code.gitea.io/gitea/models/repo"
+	"code.gitea.io/gitea/modules/annex"
 	"code.gitea.io/gitea/modules/git"
 	"code.gitea.io/gitea/modules/graceful"
 	"code.gitea.io/gitea/modules/log"
@@ -251,13 +252,24 @@ func doArchive(ctx context.Context, r *ArchiveRequest) (*repo_model.RepoArchiver
 				w,
 			)
 		} else {
-			err = gitRepo.CreateArchive(
-				ctx,
-				archiver.Type,
-				w,
-				setting.Repository.PrefixArchiveFiles,
-				archiver.CommitID,
-			)
+			if annex.IsAnnexRepo(gitRepo) {
+				err = annex.CreateArchive(
+					ctx,
+					gitRepo,
+					archiver.Type,
+					w,
+					setting.Repository.PrefixArchiveFiles,
+					archiver.CommitID,
+				)
+			} else {
+				err = gitRepo.CreateArchive(
+					ctx,
+					archiver.Type,
+					w,
+					setting.Repository.PrefixArchiveFiles,
+					archiver.CommitID,
+				)
+			}
 		}
 		_ = w.CloseWithError(err)
 		done <- err
@@ -265,6 +277,13 @@ func doArchive(ctx context.Context, r *ArchiveRequest) (*repo_model.RepoArchiver
 
 	// TODO: add lfs data to zip
 	// TODO: add submodule data to zip
+
+	// commit and close here to avoid blocking the database for the entirety of the archive generation process (might only be an issue with sqlite)
+	err = committer.Commit()
+	if err != nil {
+		return nil, err
+	}
+	committer.Close()
 
 	if _, err := storage.RepoArchives.Save(rPath, rd, -1); err != nil {
 		return nil, fmt.Errorf("unable to write archive: %w", err)
@@ -274,6 +293,14 @@ func doArchive(ctx context.Context, r *ArchiveRequest) (*repo_model.RepoArchiver
 	if err != nil {
 		return nil, err
 	}
+
+	txCtx, committer, err = db.TxContext(db.DefaultContext)
+	if err != nil {
+		return nil, err
+	}
+	defer committer.Close()
+	ctx, _, finished = process.GetManager().AddContext(txCtx, fmt.Sprintf("ArchiveRequest[%d]: %s", r.RepoID, r.GetArchiveName()))
+	defer finished()
 
 	if archiver.Status == repo_model.ArchiverGenerating {
 		archiver.Status = repo_model.ArchiverReady

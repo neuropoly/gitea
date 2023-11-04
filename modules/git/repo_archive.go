@@ -18,6 +18,8 @@ type ArchiveType int
 const (
 	// ZIP zip archive type
 	ZIP ArchiveType = iota + 1
+	// TAR tar archive type
+	TAR
 	// TARGZ tar gz archive type
 	TARGZ
 	// BUNDLE bundle archive type
@@ -29,6 +31,8 @@ func (a ArchiveType) String() string {
 	switch a {
 	case ZIP:
 		return "zip"
+	case TAR:
+		return "tar"
 	case TARGZ:
 		return "tar.gz"
 	case BUNDLE:
@@ -41,6 +45,8 @@ func ToArchiveType(s string) ArchiveType {
 	switch s {
 	case "zip":
 		return ZIP
+	case "tar":
+		return TAR
 	case "tar.gz":
 		return TARGZ
 	case "bundle":

@@ -1161,6 +1161,16 @@ func doInitAnnexRepository(repoPath string) error {
 		return err
 	}
 
+	// // a file in a subdirectory
+	err = os.Mkdir(path.Join(repoPath, "subdir"), 0o755)
+	if err != nil {
+		return err
+	}
+	err = generateRandomFile(1024*1024/4, path.Join(repoPath, "subdir/subdir-annexed.tiff"))
+	if err != nil {
+		return err
+	}
+
 	// // a text file
 	err = os.WriteFile(path.Join(repoPath, "annexed.md"), []byte("Overview\n=====\n\n1. Profit\n2. ???\n3. Review Life Activations\n"), 0o777)
 	if err != nil {
@@ -1193,6 +1203,21 @@ func doInitAnnexRepository(repoPath string) error {
 
 	// // a markdown file
 	err = os.WriteFile(path.Join(repoPath, "annexed.markdown"), []byte("Overview\n=====\n\n1. Profit\n2. ???\n3. Review Life Activations\n"), 0o777)
+	if err != nil {
+		return err
+	}
+
+	err = git.AddChanges(repoPath, false, ".")
+	if err != nil {
+		return err
+	}
+
+	// add standard symlinks to git
+	err = os.Symlink(".gitattributes", path.Join(repoPath, "link-to-.gitattributes"))
+	if err != nil {
+		return err
+	}
+	err = os.Symlink("missing-file", path.Join(repoPath, "link-to-missing-file"))
 	if err != nil {
 		return err
 	}
