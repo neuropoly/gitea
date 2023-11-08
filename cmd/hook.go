@@ -446,7 +446,7 @@ Gitea or set your environment appropriately.`, "")
 
 func hookPrintResults(results []private.HookPostReceiveBranchResult) {
 	for _, res := range results {
-		if !res.Message {
+		if !res.Message || res.Branch == "git-annex" || strings.HasPrefix(res.Branch, "synced/") {
 			continue
 		}
 

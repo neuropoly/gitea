@@ -79,6 +79,11 @@ func (opts *FindBranchOptions) Cond() builder.Cond {
 		cond = cond.And(builder.Eq{"repo_id": opts.RepoID})
 	}
 
+	// Hide the git-annex branch if it exists
+	cond = cond.And(builder.Neq{"name": "git-annex"})
+	// Hide synced/* branches that git-annex might have created
+	cond = cond.And(builder.Not{builder.Like{"name", "synced/%"}})
+
 	if len(opts.ExcludeBranchNames) > 0 {
 		cond = cond.And(builder.NotIn("name", opts.ExcludeBranchNames))
 	}

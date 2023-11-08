@@ -559,6 +559,11 @@ func activityQueryCondition(ctx context.Context, opts GetFeedsOptions) (builder.
 		}
 	}
 
+	// Hide actions related to the git-annex branch
+	cond = cond.And(builder.Neq{"ref_name": git.BranchPrefix + "git-annex"})
+	// Hide actions related to git-annex's synced/* branches
+	cond = cond.And(builder.Not{builder.Like{"ref_name", git.BranchPrefix + "synced/%"}})
+
 	return cond, nil
 }
 

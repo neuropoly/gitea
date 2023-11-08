@@ -15,6 +15,7 @@ import (
 	git_model "code.gitea.io/gitea/models/git"
 	repo_model "code.gitea.io/gitea/models/repo"
 	"code.gitea.io/gitea/models/unit"
+	"code.gitea.io/gitea/modules/annex"
 	"code.gitea.io/gitea/modules/base"
 	"code.gitea.io/gitea/modules/context"
 	"code.gitea.io/gitea/modules/git"
@@ -44,6 +45,10 @@ func Branches(ctx *context.Context) {
 		(ctx.IsSigned && repo_model.HasForkedRepo(ctx, ctx.Doer.ID, ctx.Repo.Repository.ID))
 	ctx.Data["PageIsViewCode"] = true
 	ctx.Data["PageIsBranches"] = true
+
+	if annex.IsAnnexRepo(ctx.Repo.GitRepo) {
+		ctx.Flash.Info("This repository is a git-annex repository, the git-annex branch as well as all synced/* branches are hidden to avoid accidental changes to or from them.", true)
+	}
 
 	page := ctx.FormInt("page")
 	if page <= 1 {
