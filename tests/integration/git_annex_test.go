@@ -8,11 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -56,6 +58,102 @@ func doCreateRemoteAnnexRepository(t *testing.T, u *url.URL, ctx APITestContext,
 		return fmt.Errorf("Unable to initialize remote repo with git-annex fixture: %w", err)
 	}
 	return nil
+}
+
+func doGitAnnexPushToCreateTest(t *testing.T, u *url.URL, ctx APITestContext, repo string) {
+	// create a local repository
+	repoPath, err := os.MkdirTemp(os.TempDir(), "git-annex-repo-*")
+	require.NoError(t, err)
+	_, _, err = git.NewCommandContextNoGlobals(git.DefaultContext, "init", ".").RunStdString(&git.RunOpts{Dir: repoPath})
+	require.NoError(t, err)
+	err = doInitAnnexRepository(repoPath)
+	require.NoError(t, err)
+
+	// add a remote
+	repoURL := createSSHUrl(repo, u)
+	_, _, err = git.NewCommandContextNoGlobals(git.DefaultContext, "remote", "add", "origin").AddDynamicArguments(repoURL.String()).RunStdString(&git.RunOpts{Dir: repoPath})
+	require.NoError(t, err)
+
+	// sync to gitea
+	withAnnexCtxKeyFile(t, ctx, func() {
+		_, _, err = git.NewCommandContextNoGlobals(git.DefaultContext, "annex", "sync", "--content").RunStdString(&git.RunOpts{Dir: repoPath})
+		require.NoError(t, err)
+	})
+
+	// check that the repo was created and synced as expected
+	// // repo exists on the gitea server
+	remoteRepoPath := path.Join(setting.RepoRootPath, repo+".git")
+	require.DirExists(t, remoteRepoPath)
+
+	// // default branch matches
+	localRepo, err := git.OpenRepository(git.DefaultContext, repoPath)
+	require.NoError(t, err)
+	expectedDefaultBranch, err := localRepo.GetDefaultBranch()
+	require.NoError(t, err)
+
+	remoteRepo, err := git.OpenRepository(git.DefaultContext, remoteRepoPath)
+	require.NoError(t, err)
+	actualDefaultBranch, err := remoteRepo.GetDefaultBranch()
+	require.NoError(t, err)
+
+	require.Equal(t, expectedDefaultBranch, actualDefaultBranch)
+
+	// // repo contains the same annexed files
+	err = filepath.WalkDir(repoPath, func(localPath string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// skip anything below .git/
+		if d.IsDir() && strings.HasSuffix(localPath, "/.git") {
+			return filepath.SkipDir
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		// local (expected) content
+		f, err := os.Open(localPath)
+		require.NoError(t, err)
+		defer f.Close()
+		expectedContent, err := io.ReadAll(f)
+		require.NoError(t, err)
+
+		// remote (actual) content
+		remotePath, err := contentLocation(remoteRepoPath, strings.TrimPrefix(localPath, repoPath+"/"))
+		if err == annex.ErrInvalidPointer {
+			// skip non-annex files
+			return nil
+		}
+		require.FileExists(t, remotePath)
+		f, err = os.Open(remotePath)
+		require.NoError(t, err)
+		defer f.Close()
+		actualContent, err := io.ReadAll(f)
+		require.NoError(t, err)
+
+		require.Equal(t, expectedContent, actualContent)
+
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestGitAnnexPushToCreate(t *testing.T) {
+	onGiteaRun(t, func(t *testing.T, u *url.URL) {
+		t.Run("User", func(t *testing.T) {
+			setting.Repository.EnablePushCreateUser = true
+			ctx := NewAPITestContext(t, "user2", "annex-push-to-create-test", auth_model.AccessTokenScopeWriteRepository)
+			doGitAnnexPushToCreateTest(t, u, ctx, "user2/annex-push-to-create-test")
+		})
+
+		t.Run("Org", func(t *testing.T) {
+			setting.Repository.EnablePushCreateOrg = true
+			ctx := NewAPITestContext(t, "user2", "annex-push-to-create-test", auth_model.AccessTokenScopeWriteRepository)
+			doGitAnnexPushToCreateTest(t, u, ctx, "org3/annex-push-to-create-test")
+		})
+	})
 }
 
 func TestGitAnnexMedia(t *testing.T) {
