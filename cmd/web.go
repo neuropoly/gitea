@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -245,6 +246,13 @@ func runWeb(ctx *cli.Context) error {
 	// Set pid file setting
 	if ctx.IsSet("pid") {
 		createPIDFile(ctx.String("pid"))
+	}
+
+	if setting.Annex.Enabled {
+		_, err := exec.LookPath("git-annex")
+		if err != nil {
+			log.Fatal("You have enabled git-annex support but git-annex is not installed. Please make sure that gitea's PATH contains the git-annex executable.")
+		}
 	}
 
 	if !setting.InstallLock {
