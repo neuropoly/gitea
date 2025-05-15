@@ -58,7 +58,7 @@ const filterCssImport = (url, ...args) => {
 // in case lightningcss fails to load, fall back to esbuild for css minify
 let LightningCssMinifyPlugin;
 try {
-  ({LightningCssMinifyPlugin} = await import('lightningcss-loader'));
+  ({LightningCssMinifyPlugin} = import('lightningcss-loader'));
 } catch {}
 
 /** @type {import("webpack").Configuration} */
