@@ -90,6 +90,7 @@ func runDumpRepository(ctx *cli.Context) error {
 	if err := git.InitSimple(context.Background()); err != nil {
 		return err
 	}
+	setting.LoadSettings() // cannot access session settings otherwise
 
 	log.Info("AppPath: %s", setting.AppPath)
 	log.Info("AppWorkPath: %s", setting.AppWorkPath)
