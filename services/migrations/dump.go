@@ -444,7 +444,16 @@ func (g *RepositoryDumper) handlePullRequest(pr *base.PullRequest) error {
 
 		// SECURITY: We will assume that the pr.PatchURL has been checked
 		// pr.PatchURL maybe a local file - but note EnsureSafe should be asserting that this safe
-		resp, err := http.Get(u) // TODO: This probably needs to use the downloader as there may be rate limiting issues here
+		httpClient := NewMigrationHTTPClient()
+
+		req, err := http.NewRequest("GET", u, nil)
+		if err != nil {
+			return err
+		}
+		req = req.WithContext(g.ctx)
+		resp, err := httpClient.Do(req)
+
+		// resp, err := http.Get(u) // TODO: This probably needs to use the downloader as there may be rate limiting issues here
 		if err != nil {
 			return err
 		}
