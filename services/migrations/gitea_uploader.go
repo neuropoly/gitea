@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -554,11 +555,18 @@ func (g *GiteaLocalUploader) updateGitForPullRequest(pr *base.PullRequest) (head
 
 		// SECURITY: We will assume that the pr.PatchURL has been checked
 		// pr.PatchURL maybe a local file - but note EnsureSafe should be asserting that this safe
-		ret, err := uri.Open(pr.PatchURL) // TODO: This probably needs to use the downloader as there may be rate limiting issues here
+		httpClient := NewMigrationHTTPClient()
+
+		req, err := http.NewRequest("GET", pr.PatchURL, nil)
 		if err != nil {
 			return err
 		}
-		defer ret.Close()
+		req = req.WithContext(g.ctx)
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
 
 		pullDir := filepath.Join(g.repo.RepoPath(), "pulls")
 		if err = os.MkdirAll(pullDir, os.ModePerm); err != nil {
@@ -572,7 +580,7 @@ func (g *GiteaLocalUploader) updateGitForPullRequest(pr *base.PullRequest) (head
 		defer f.Close()
 
 		// TODO: Should there be limits on the size of this file?
-		_, err = io.Copy(f, ret)
+		_, err = io.Copy(f, resp.Body)
 
 		return err
 	}()
